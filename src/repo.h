@@ -78,6 +78,7 @@ private:
 	bool gitAdd(const string& a_sPath) const;
 	bool gitCommit(const string& a_sCommitMessage) const;
 	bool gitPush() const;
+	bool gitPull(const string& a_sRemoteURL) const;
 	UString m_sInputPath;
 	UString m_sOutputPath;
 	string m_sType;

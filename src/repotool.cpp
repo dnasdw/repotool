@@ -397,7 +397,8 @@ int CRepoTool::sample()
 	UPrintf(USTR("repotool -v --pack -i \"/github/upload\" -o \"D:\\github\\upload_pack\"\n\n"));
 	UPrintf(USTR("# upload file(s)\n"));
 	UPrintf(USTR("repotool -v --upload -i \"/github/upload\" -t bitbucket --user someone\n\n"));
-	// TODO: download
+	UPrintf(USTR("# download file(s)\n"));
+	UPrintf(USTR("repotool -v --download -i \"/github/upload\"\n\n"));
 	return 0;
 }
 

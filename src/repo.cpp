@@ -1095,7 +1095,202 @@ bool CRepo::Download()
 	{
 		return false;
 	}
-	// TODO:
+	if (!loadIndex())
+	{
+		return false;
+	}
+	if (!StartWith(m_sInputPath, USTR("/")))
+	{
+		m_sInputPath = USTR("/") + m_sInputPath;
+	}
+	m_sInputPath = Replace(m_sInputPath, USTR("\\"), USTR("/"));
+	if (EndWith(m_sInputPath, USTR("/")))
+	{
+		m_sInputPath.erase(m_sInputPath.size() - 1);
+	}
+	string sInputPath = UToU8(m_sInputPath);
+	map<string, string>::const_iterator itPathHash = m_mPathHash.find(sInputPath);
+	if (itPathHash == m_mPathHash.end())
+	{
+		UPrintf(USTR("ERROR: %") PRIUS USTR(" does not exists\n\n"), m_sInputPath.c_str());
+		return false;
+	}
+	m_sHash = itPathHash->second;
+	if (!generateDataDirPath(false))
+	{
+		return false;
+	}
+	string sRemote;
+	if (!readTextFile(m_sDataRemoteFilePath, sRemote))
+	{
+		return false;
+	}
+	vector<pair<string, string>> vTypeUser;
+	vector<string> vRemote = SplitOf(sRemote, "\r\n");
+	for (vector<string>::const_iterator it = vRemote.begin(); it != vRemote.end(); ++it)
+	{
+		const string& sLine = *it;
+		if (sLine.empty())
+		{
+			continue;
+		}
+		vector<string> vLine = Split(sLine, "\t");
+		if (vLine.size() != 2)
+		{
+			UPrintf(USTR("ERROR: parse remote %") PRIUS USTR(" failed\n\n"), U8ToU(sLine).c_str());
+			return false;
+		}
+		const string& sType = vLine[0];
+		const string& sUser = vLine[1];
+		if (!m_sType.empty())
+		{
+			if (!m_sUser.empty())
+			{
+				if (sType == m_sType && sUser == m_sUser)
+				{
+					vTypeUser.push_back(make_pair(sType, sUser));
+				}
+			}
+			else
+			{
+				if (sType == m_sType)
+				{
+					vTypeUser.push_back(make_pair(sType, sUser));
+				}
+			}
+		}
+		else
+		{
+			if (!m_sUser.empty())
+			{
+				if (sUser == m_sUser)
+				{
+					vTypeUser.push_back(make_pair(sType, sUser));
+				}
+			}
+			else
+			{
+				vTypeUser.push_back(make_pair(sType, sUser));
+			}
+		}
+	}
+	if (vTypeUser.empty())
+	{
+		UPrintf(USTR("ERROR: no remote for %") PRIUS USTR("\n\n"), m_sInputPath.c_str());
+		return false;
+	}
+	string sDataIndex;
+	if (!readTextFile(m_sDataIndexFilePath, sDataIndex))
+	{
+		return false;
+	}
+	vector<string> vIndex = SplitOf(sDataIndex, "\r\n");
+	n32 nRepoCount = 0;
+	for (vector<string>::const_reverse_iterator it = vIndex.rbegin(); it != vIndex.rend(); ++it)
+	{
+		const string& sLine = *it;
+		if (sLine.empty())
+		{
+			continue;
+		}
+		SPath path;
+		if (!path.Parse(sLine))
+		{
+			UPrintf(USTR("ERROR: parse index %") PRIUS USTR(" failed\n\n"), U8ToU(sLine).c_str());
+			return false;
+		}
+		n64 nFileSize = path.Size;
+		n64 nRepoSize = path.RepoDataV1.RepoSize;
+		n32 nRepoIndex = path.RepoDataV1.RepoIndex;
+		n32 nRepoIndex2 = path.RepoDataV1.RepoIndex2;
+		while (nFileSize > 0)
+		{
+			if (nRepoSize >= s_nRepoSizeMax)
+			{
+				nRepoSize = 0;
+				nRepoIndex++;
+				nRepoIndex2 = 0;
+			}
+			n64 nSize = nFileSize > s_nRepoFileSizeMax ? s_nRepoFileSizeMax : nFileSize;
+			nFileSize -= nSize;
+			nRepoSize += nSize;
+			nRepoIndex2++;
+		}
+		nRepoCount = nRepoIndex + 1;
+		break;
+	}
+	for (n32 nRepoIndex = 0; nRepoIndex < nRepoCount; nRepoIndex++)
+	{
+		if (!generateRepoDirPath(nRepoIndex, true))
+		{
+			return false;
+		}
+		if (UChdir(m_sRepoDirPath.c_str()) != 0)
+		{
+			UPrintf(USTR("ERROR: change dir %") PRIUS USTR(" failed\n\n"), m_sRepoDirPath.c_str());
+			return false;
+		}
+		if (!gitInitMaster())
+		{
+			return false;
+		}
+		bool bResult = false;
+		for (vector<pair<string, string>>::const_iterator itTypeUser = vTypeUser.begin(); itTypeUser != vTypeUser.end(); ++itTypeUser)
+		{
+			m_sType = itTypeUser->first;
+			m_sUser = itTypeUser->second;
+			m_sRemoteName = m_sType + "_" + m_sUser;
+			UString sRemoteTempFileName = U8ToU(m_sRemoteName + ".txt");
+			UString sRemoteTempFilePath = s_sTempDirName + USTR("/") + sRemoteTempFileName;
+			string sRemoteTemp;
+			FILE* fp = UFopen(sRemoteTempFilePath, USTR("rb"), false);
+			if (fp != nullptr)
+			{
+				fclose(fp);
+				if (!readTextFile(sRemoteTempFilePath, sRemoteTemp))
+				{
+					continue;
+				}
+			}
+			set<string> sRemoteInit;
+			vector<string> vRemoteTemp = SplitOf(sRemoteTemp, "\r\n");
+			for (vector<string>::const_iterator it = vRemoteTemp.begin(); it != vRemoteTemp.end(); ++it)
+			{
+				const string& sLine = *it;
+				if (!sLine.empty())
+				{
+					sRemoteInit.insert(sLine);
+				}
+			}
+			string sRemoteURL;
+			if (m_sType == CBitbucket::s_sTypeName)
+			{
+				CBitbucket bitbucket;
+				bitbucket.SetUser(m_sUser);
+				bitbucket.SetRepoName(m_sRepoName);
+				bitbucket.SetVerbose(m_bVerbose);
+				sRemoteURL = bitbucket.GetRepoRemoteHttpsURL();
+			}
+			if (sRemoteInit.find(s_sRemoteInitGitRemoteAdd) == sRemoteInit.end())
+			{
+				gitRemoteAdd(sRemoteURL);
+				sRemoteInit.insert(s_sRemoteInitGitRemoteAdd);
+				sRemoteTemp += s_sRemoteInitGitRemoteAdd + "\n";
+				writeTextFile(sRemoteTempFilePath, sRemoteTemp);
+			}
+			if (!gitPull(sRemoteURL))
+			{
+				continue;
+			}
+			bResult = true;
+			break;
+		}
+		if (!bResult)
+		{
+			UPrintf(USTR("ERROR: download %") PRIUS USTR(" failed\n\n"), U8ToU(m_sRepoName).c_str());
+			return false;
+		}
+	}
 	return true;
 }
 
@@ -1634,7 +1829,18 @@ bool CRepo::gitPush() const
 	n32 nResult = system(("git push -u " + m_sRepoPushURL + " master").c_str());
 	if (nResult != 0)
 	{
-		UPrintf(USTR("ERROR: git push -u %") PRIUS USTR(" failed\n\n"), U8ToU(m_sRepoPushURL).c_str());
+		UPrintf(USTR("ERROR: git push -u %") PRIUS USTR(" master failed\n\n"), U8ToU(m_sRepoPushURL).c_str());
+		return false;
+	}
+	return true;
+}
+
+bool CRepo::gitPull(const string& a_sRemoteURL) const
+{
+	n32 nResult = system(("git pull " + a_sRemoteURL + " master").c_str());
+	if (nResult != 0)
+	{
+		UPrintf(USTR("ERROR: git pull %") PRIUS USTR(" master failed\n\n"), U8ToU(a_sRemoteURL).c_str());
 		return false;
 	}
 	return true;
