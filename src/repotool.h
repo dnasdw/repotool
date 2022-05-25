@@ -50,6 +50,7 @@ private:
 	UString m_sOutputPath;
 	bool m_bVerbose;
 	UString m_sType;
+	UString m_sWorkspace;
 	UString m_sUser;
 	UString m_sMessage;
 };

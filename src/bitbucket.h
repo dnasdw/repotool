@@ -16,8 +16,9 @@ class CBitbucket
 public:
 	CBitbucket();
 	~CBitbucket();
-	void SetUser(const string& a_sUser);
+	void SetWorkspace(const string& a_sWorkspace);
 	void SetRepoName(const string& a_sRepoName);
+	void SetUser(const string& a_sUser);
 	void SetAppPassword(const string& a_sAppPassword);
 	void SetProjectName(const string& a_sProjectName);
 	void SetProjectKey(const string& a_sProjectKey);
@@ -32,8 +33,9 @@ public:
 private:
 	bool createProject();
 	bool getProject();
-	string m_sUser;
+	string m_sWorkspace;
 	string m_sRepoName;
+	string m_sUser;
 	string m_sAppPassword;
 	string m_sProjectName;
 	string m_sProjectKey;

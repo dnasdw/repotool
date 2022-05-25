@@ -18,7 +18,8 @@ CRepoTool::SOption CRepoTool::s_Option[] =
 	{ USTR("verbose"), USTR('v'), USTR("show the info") },
 	{ nullptr, 0, USTR("\nupload:") },
 	{ USTR("type"), USTR('t'), USTR("[bitbucket]\n\t\tthe repository type") },
-	{ USTR("user"), 0, USTR("user for repository") },
+	{ USTR("workspace"), 0, USTR("the workspace of the repository") },
+	{ USTR("user"), 0, USTR("the user for the repository") },
 	{ nullptr, 0, nullptr }
 };
 
@@ -316,6 +317,14 @@ CRepoTool::EParseOptionReturn CRepoTool::parseOptions(const UChar* a_pName, int&
 			return kParseOptionReturnUnknownArgument;
 		}
 	}
+	else if (UCscmp(a_pName, USTR("workspace")) == 0)
+	{
+		if (a_nIndex + 1 >= a_nArgc)
+		{
+			return kParseOptionReturnNoArgument;
+		}
+		m_sWorkspace = a_pArgv[++a_nIndex];
+	}
 	else if (UCscmp(a_pName, USTR("user")) == 0)
 	{
 		if (a_nIndex + 1 >= a_nArgc)
@@ -370,6 +379,14 @@ bool CRepoTool::upload()
 	CRepo repo;
 	repo.SetInputPath(m_sInputPath);
 	repo.SetType(m_sType);
+	if (!m_sWorkspace.empty())
+	{
+		repo.SetWorkspace(m_sWorkspace);
+	}
+	else
+	{
+		repo.SetWorkspace(m_sUser);
+	}
 	repo.SetUser(m_sUser);
 	repo.SetVerbose(m_bVerbose);
 	bool bResult = repo.Upload();
@@ -382,6 +399,14 @@ bool CRepoTool::download()
 	CRepo repo;
 	repo.SetInputPath(m_sInputPath);
 	repo.SetType(m_sType);
+	if (!m_sWorkspace.empty())
+	{
+		repo.SetWorkspace(m_sWorkspace);
+	}
+	else
+	{
+		repo.SetWorkspace(m_sUser);
+	}
 	repo.SetUser(m_sUser);
 	repo.SetVerbose(m_bVerbose);
 	bool bResult = repo.Download();

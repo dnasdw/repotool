@@ -33,6 +33,7 @@ public:
 	void SetInputPath(const UString& a_sInputPath);
 	void SetOutputPath(const UString& a_sOutputPath);
 	void SetType(const UString& a_sType);
+	void SetWorkspace(const UString& a_sWorkspace);
 	void SetUser(const UString& a_sUser);
 	void SetVerbose(bool a_bVerbose);
 	bool Unpack();
@@ -82,6 +83,7 @@ private:
 	UString m_sInputPath;
 	UString m_sOutputPath;
 	string m_sType;
+	string m_sWorkspace;
 	string m_sUser;
 	bool m_bVerbose;
 	UString m_sSeperator;

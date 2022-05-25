@@ -30,9 +30,9 @@ CBitbucket::~CBitbucket()
 {
 }
 
-void CBitbucket::SetUser(const string& a_sUser)
+void CBitbucket::SetWorkspace(const string& a_sWorkspace)
 {
-	m_sUser = a_sUser;
+	m_sWorkspace = a_sWorkspace;
 }
 
 void CBitbucket::SetRepoName(const string& a_sRepoName)
@@ -43,6 +43,11 @@ void CBitbucket::SetRepoName(const string& a_sRepoName)
 void CBitbucket::SetAppPassword(const string& a_sAppPassword)
 {
 	m_sAppPassword = a_sAppPassword;
+}
+
+void CBitbucket::SetUser(const string& a_sUser)
+{
+	m_sUser = a_sUser;
 }
 
 void CBitbucket::SetProjectName(const string& a_sProjectName)
@@ -68,7 +73,7 @@ bool CBitbucket::CreateRepo()
 	}
 	if (m_bVerbose)
 	{
-		UPrintf(USTR("INFO: create repo %") PRIUS USTR(" project key %") PRIUS USTR("\n"), U8ToU(m_sUser + "/" + m_sRepoName).c_str(), U8ToU(m_sProjectKey).c_str());
+		UPrintf(USTR("INFO: create repo %") PRIUS USTR(" project key %") PRIUS USTR("\n"), U8ToU(m_sWorkspace + "/" + m_sRepoName).c_str(), U8ToU(m_sProjectKey).c_str());
 	}
 	CCurlHolder curlHolder;
 	CURL* pCurl = curlHolder.GetCurl();
@@ -80,7 +85,7 @@ bool CBitbucket::CreateRepo()
 	curlHolder.SetUserPassword(m_sUser + ":" + m_sAppPassword);
 	curlHolder.HeaderAppend("Content-Type: application/json");
 	string sPostFields = "{\"scm\": \"git\", \"project\": {\"key\": \"" + m_sProjectKey + "\"}}";
-	curlHolder.SetUrl("https://api.bitbucket.org/2.0/repositories/" + m_sUser + "/" + m_sRepoName);
+	curlHolder.SetUrl("https://api.bitbucket.org/2.0/repositories/" + m_sWorkspace + "/" + m_sRepoName);
 	if (curlHolder.IsError())
 	{
 		UPrintf(USTR("ERROR: curl setup error\n\n"));
@@ -127,7 +132,7 @@ bool CBitbucket::CreateRepo()
 
 string CBitbucket::GetRepoRemoteHttpsURL() const
 {
-	string sURL = "https://bitbucket.org/" + m_sUser + "/" + m_sRepoName + ".git";
+	string sURL = "https://bitbucket.org/" + m_sWorkspace + "/" + m_sRepoName + ".git";
 	return sURL;
 }
 
@@ -135,7 +140,7 @@ string CBitbucket::GetRepoPushHttpsURL() const
 {
 	string sUser = m_sUser;
 	string sAppPassword = m_sAppPassword;
-	string sURL = "https://" + sUser + ":" + sAppPassword + "@bitbucket.org/" + m_sUser + "/" + m_sRepoName + ".git";
+	string sURL = "https://" + sUser + ":" + sAppPassword + "@bitbucket.org/" + m_sWorkspace + "/" + m_sRepoName + ".git";
 	CCurlHolder curlHolder;
 	CURL* pCurl = curlHolder.GetCurl();
 	if (pCurl == nullptr)
@@ -145,7 +150,7 @@ string CBitbucket::GetRepoPushHttpsURL() const
 	}
 	sUser = curlHolder.EscapeString(sUser);
 	sAppPassword = curlHolder.EscapeString(sAppPassword);
-	sURL = "https://" + sUser + ":" + sAppPassword + "@bitbucket.org/" + m_sUser + "/" + m_sRepoName + ".git";
+	sURL = "https://" + sUser + ":" + sAppPassword + "@bitbucket.org/" + m_sWorkspace + "/" + m_sRepoName + ".git";
 	return sURL;
 }
 
@@ -174,7 +179,7 @@ bool CBitbucket::createProject()
 	curlHolder.SetUserPassword(m_sUser + ":" + m_sAppPassword);
 	curlHolder.HeaderAppend("Content-Type: application/json");
 	string sPostFields = "{\"name\": \"" + m_sProjectName + "\", \"key\": \"" + m_sProjectKey + "\", \"is_private\": false}";
-	curlHolder.SetUrl("https://api.bitbucket.org/2.0/workspaces/" + m_sUser + "/projects");
+	curlHolder.SetUrl("https://api.bitbucket.org/2.0/workspaces/" + m_sWorkspace + "/projects");
 	if (curlHolder.IsError())
 	{
 		UPrintf(USTR("ERROR: curl setup error\n\n"));
@@ -233,7 +238,7 @@ bool CBitbucket::getProject()
 		return false;
 	}
 	curlHolder.SetUserPassword(m_sUser + ":" + m_sAppPassword);
-	curlHolder.SetUrl("https://api.bitbucket.org/2.0/workspaces/" + m_sUser + "/projects/" + m_sProjectKey);
+	curlHolder.SetUrl("https://api.bitbucket.org/2.0/workspaces/" + m_sWorkspace + "/projects/" + m_sProjectKey);
 	if (curlHolder.IsError())
 	{
 		UPrintf(USTR("ERROR: curl setup error\n\n"));

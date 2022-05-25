@@ -67,6 +67,11 @@ void CRepo::SetType(const UString& a_sType)
 	m_sType = UToU8(a_sType);
 }
 
+void CRepo::SetWorkspace(const UString& a_sWorkspace)
+{
+	m_sWorkspace = UToU8(a_sWorkspace);
+}
+
 void CRepo::SetUser(const UString& a_sUser)
 {
 	m_sUser = UToU8(a_sUser);
@@ -826,13 +831,13 @@ bool CRepo::Upload()
 			return false;
 		}
 		const string& sType = vLine[0];
-		const string& sUser = vLine[1];
-		if (sType == m_sType && sUser == m_sUser)
+		const string& sWorkspace = vLine[1];
+		if (sType == m_sType && sWorkspace == m_sWorkspace)
 		{
 			return true;
 		}
 	}
-	m_sRemoteName = m_sType + "_" + m_sUser;
+	m_sRemoteName = m_sType + "_" + m_sWorkspace;
 	UString sRemoteTempFileName = U8ToU(m_sRemoteName + ".txt");
 	string sDataIndex;
 	if (!readTextFile(m_sDataIndexFilePath, sDataIndex))
@@ -919,8 +924,9 @@ bool CRepo::Upload()
 		if (m_sType == CBitbucket::s_sTypeName)
 		{
 			CBitbucket bitbucket;
-			bitbucket.SetUser(m_sUser);
+			bitbucket.SetWorkspace(m_sWorkspace);
 			bitbucket.SetRepoName(m_sRepoName);
+			bitbucket.SetUser(m_sUser);
 			bitbucket.SetAppPassword(m_sPassword);
 			bitbucket.SetProjectName(m_mConfig[CBitbucket::s_sConfigKeyProjectName]);
 			bitbucket.SetProjectKey(m_mConfig[CBitbucket::s_sConfigKeyProjectKey]);
@@ -1080,7 +1086,7 @@ bool CRepo::Upload()
 			}
 		}
 	}
-	sRemote += m_sType + "\t" + m_sUser + "\n";
+	sRemote += m_sType + "\t" + m_sWorkspace + "\n";
 	if (!writeTextFile(m_sDataRemoteFilePath, sRemote))
 	{
 		return false;
@@ -1125,7 +1131,7 @@ bool CRepo::Download()
 	{
 		return false;
 	}
-	vector<pair<string, string>> vTypeUser;
+	vector<pair<string, string>> vTypeWorkspace;
 	vector<string> vRemote = SplitOf(sRemote, "\r\n");
 	for (vector<string>::const_iterator it = vRemote.begin(); it != vRemote.end(); ++it)
 	{
@@ -1141,40 +1147,40 @@ bool CRepo::Download()
 			return false;
 		}
 		const string& sType = vLine[0];
-		const string& sUser = vLine[1];
+		const string& sWorkspace = vLine[1];
 		if (!m_sType.empty())
 		{
-			if (!m_sUser.empty())
+			if (!m_sWorkspace.empty())
 			{
-				if (sType == m_sType && sUser == m_sUser)
+				if (sType == m_sType && sWorkspace == m_sWorkspace)
 				{
-					vTypeUser.push_back(make_pair(sType, sUser));
+					vTypeWorkspace.push_back(make_pair(sType, sWorkspace));
 				}
 			}
 			else
 			{
 				if (sType == m_sType)
 				{
-					vTypeUser.push_back(make_pair(sType, sUser));
+					vTypeWorkspace.push_back(make_pair(sType, sWorkspace));
 				}
 			}
 		}
 		else
 		{
-			if (!m_sUser.empty())
+			if (!m_sWorkspace.empty())
 			{
-				if (sUser == m_sUser)
+				if (sWorkspace == m_sWorkspace)
 				{
-					vTypeUser.push_back(make_pair(sType, sUser));
+					vTypeWorkspace.push_back(make_pair(sType, sWorkspace));
 				}
 			}
 			else
 			{
-				vTypeUser.push_back(make_pair(sType, sUser));
+				vTypeWorkspace.push_back(make_pair(sType, sWorkspace));
 			}
 		}
 	}
-	if (vTypeUser.empty())
+	if (vTypeWorkspace.empty())
 	{
 		UPrintf(USTR("ERROR: no remote for %") PRIUS USTR("\n\n"), m_sInputPath.c_str());
 		return false;
@@ -1235,11 +1241,11 @@ bool CRepo::Download()
 			return false;
 		}
 		bool bResult = false;
-		for (vector<pair<string, string>>::const_iterator itTypeUser = vTypeUser.begin(); itTypeUser != vTypeUser.end(); ++itTypeUser)
+		for (vector<pair<string, string>>::const_iterator itTypeWorkspace = vTypeWorkspace.begin(); itTypeWorkspace != vTypeWorkspace.end(); ++itTypeWorkspace)
 		{
-			m_sType = itTypeUser->first;
-			m_sUser = itTypeUser->second;
-			m_sRemoteName = m_sType + "_" + m_sUser;
+			m_sType = itTypeWorkspace->first;
+			m_sWorkspace = itTypeWorkspace->second;
+			m_sRemoteName = m_sType + "_" + m_sWorkspace;
 			UString sRemoteTempFileName = U8ToU(m_sRemoteName + ".txt");
 			UString sRemoteTempFilePath = s_sTempDirName + USTR("/") + sRemoteTempFileName;
 			string sRemoteTemp;
@@ -1266,7 +1272,7 @@ bool CRepo::Download()
 			if (m_sType == CBitbucket::s_sTypeName)
 			{
 				CBitbucket bitbucket;
-				bitbucket.SetUser(m_sUser);
+				bitbucket.SetWorkspace(m_sWorkspace);
 				bitbucket.SetRepoName(m_sRepoName);
 				bitbucket.SetVerbose(m_bVerbose);
 				sRemoteURL = bitbucket.GetRepoRemoteHttpsURL();
