@@ -2,6 +2,7 @@
 #include <omp.h>
 #include "bitbucket.h"
 #include "crc32.h"
+#include "github.h"
 #include "md5.h"
 #include "path.h"
 #include "sha1.h"
@@ -948,6 +949,31 @@ bool CRepo::Upload()
 			m_sRepoPushURL = bitbucket.GetRepoPushHttpsURL();
 			nAddDataFileSizeMaxCountPerCommit = bitbucket.GetAddDataFileSizeMaxCountPerCommit();
 		}
+		else if (m_sType == CGithub::s_sTypeName)
+		{
+			CGithub github;
+			github.SetWorkspace(m_sWorkspace);
+			github.SetRepoName(m_sRepoName);
+			github.SetUser(m_sUser);
+			github.SetPersonalAccessToken(m_sPassword);
+			github.SetVerbose(m_bVerbose);
+			if (sRemoteInit.find(s_sRemoteInitCreateRemoteRepo) == sRemoteInit.end())
+			{
+				if (!github.CreateRepo())
+				{
+					return false;
+				}
+				sRemoteInit.insert(s_sRemoteInitCreateRemoteRepo);
+				sRemoteTemp += s_sRemoteInitCreateRemoteRepo + "\n";
+				if (!writeTextFile(sRemoteTempFilePath, sRemoteTemp))
+				{
+					return false;
+				}
+			}
+			sRemoteURL = github.GetRepoRemoteHttpsURL();
+			m_sRepoPushURL = github.GetRepoPushHttpsURL();
+			nAddDataFileSizeMaxCountPerCommit = github.GetAddDataFileSizeMaxCountPerCommit();
+		}
 		if (nAddDataFileSizeMaxCountPerCommit < 1)
 		{
 			nAddDataFileSizeMaxCountPerCommit = 1;
@@ -1277,6 +1303,14 @@ bool CRepo::Download()
 				bitbucket.SetVerbose(m_bVerbose);
 				sRemoteURL = bitbucket.GetRepoRemoteHttpsURL();
 			}
+			else if (m_sType == CGithub::s_sTypeName)
+			{
+				CGithub github;
+				github.SetWorkspace(m_sWorkspace);
+				github.SetRepoName(m_sRepoName);
+				github.SetVerbose(m_bVerbose);
+				sRemoteURL = github.GetRepoRemoteHttpsURL();
+			}
 			if (sRemoteInit.find(s_sRemoteInitGitRemoteAdd) == sRemoteInit.end())
 			{
 				gitRemoteAdd(sRemoteURL);
@@ -1546,7 +1580,7 @@ bool CRepo::loadUser()
 		}
 		vector<string> vLine = Split(sLine, "\t");
 		const string& sType = vLine[0];
-		if (sType == CBitbucket::s_sTypeName)
+		if (sType == CBitbucket::s_sTypeName && m_sType == sType)
 		{
 			SBitbucketUser user;
 			if (!user.Parse(vLine))
@@ -1557,6 +1591,20 @@ bool CRepo::loadUser()
 			if (user.User == m_sUser)
 			{
 				m_sPassword = user.AppPassword;
+				break;
+			}
+		}
+		else if (sType == CGithub::s_sTypeName && m_sType == sType)
+		{
+			SGithubUser user;
+			if (!user.Parse(vLine))
+			{
+				UPrintf(USTR("ERROR: parse user %") PRIUS USTR(" failed\n\n"), U8ToU(sLine).c_str());
+				return false;
+			}
+			if (user.User == m_sUser)
+			{
+				m_sPassword = user.PersonalAccessToken;
 				break;
 			}
 		}

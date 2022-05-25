@@ -1,6 +1,7 @@
 #include "repotool.h"
 #include "bitbucket.h"
 #include "curl_holder.h"
+#include "github.h"
 #include "repo.h"
 
 CRepoTool::SOption CRepoTool::s_Option[] =
@@ -17,7 +18,7 @@ CRepoTool::SOption CRepoTool::s_Option[] =
 	{ USTR("output"), USTR('o'), USTR("the output") },
 	{ USTR("verbose"), USTR('v'), USTR("show the info") },
 	{ nullptr, 0, USTR("\nupload:") },
-	{ USTR("type"), USTR('t'), USTR("[bitbucket]\n\t\tthe repository type") },
+	{ USTR("type"), USTR('t'), USTR("[bitbucket|github]\n\t\tthe repository type") },
 	{ USTR("workspace"), 0, USTR("the workspace of the repository") },
 	{ USTR("user"), 0, USTR("the user for the repository") },
 	{ nullptr, 0, nullptr }
@@ -311,7 +312,8 @@ CRepoTool::EParseOptionReturn CRepoTool::parseOptions(const UChar* a_pName, int&
 			return kParseOptionReturnNoArgument;
 		}
 		m_sType = a_pArgv[++a_nIndex];
-		if (m_sType != U8ToU(CBitbucket::s_sTypeName))
+		if (m_sType != U8ToU(CBitbucket::s_sTypeName)
+			&& m_sType != U8ToU(CGithub::s_sTypeName))
 		{
 			m_sMessage = m_sType;
 			return kParseOptionReturnUnknownArgument;
