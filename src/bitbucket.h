@@ -40,6 +40,7 @@ private:
 	string m_sProjectName;
 	string m_sProjectKey;
 	bool m_bVerbose;
+	bool m_bRepoIsPrivate;
 };
 
 #endif	// BITBUCKET_H_

@@ -1,4 +1,6 @@
 #include "bitbucket.h"
+#define RAPIDJSON_HAS_STDSTRING 1
+#include <rapidjson/document.h>
 #include "curl_holder.h"
 
 const string CBitbucket::s_sTypeName = "bitbucket";
@@ -23,6 +25,7 @@ bool SBitbucketUser::Parse(const vector<string>& a_vLine)
 
 CBitbucket::CBitbucket()
 	: m_bVerbose(false)
+	, m_bRepoIsPrivate(false)
 {
 }
 
@@ -84,7 +87,7 @@ bool CBitbucket::CreateRepo()
 	}
 	curlHolder.SetUserPassword(m_sUser + ":" + m_sAppPassword);
 	curlHolder.HeaderAppend("Content-Type: application/json");
-	string sPostFields = "{\"scm\": \"git\", \"project\": {\"key\": \"" + m_sProjectKey + "\"}}";
+	string sPostFields = Format("{\"is_private\": %s, \"scm\": \"git\", \"project\": {\"key\": \"%s\"}}", (m_bRepoIsPrivate ? "true" : "false"), m_sProjectKey.c_str());
 	curlHolder.SetUrl("https://api.bitbucket.org/2.0/repositories/" + m_sWorkspace + "/" + m_sRepoName);
 	if (curlHolder.IsError())
 	{
@@ -262,5 +265,24 @@ bool CBitbucket::getProject()
 		UPrintf(USTR("ERROR: get project error %d code %ld\n\n"), eCode, nStatusCode);
 		return false;
 	}
+	RAPIDJSON_NAMESPACE::Document responseJson;
+	if (responseJson.Parse(sResponse).HasParseError() || !responseJson.IsObject())
+	{
+		UPrintf(USTR("ERROR: parse json response failed\n\n"));
+		return false;
+	}
+	RAPIDJSON_NAMESPACE::Value::ConstMemberIterator itJsonIsPrivate = responseJson.FindMember("is_private");
+	if (itJsonIsPrivate == responseJson.MemberEnd())
+	{
+		UPrintf(USTR("ERROR: no is_private in json response\n\n"));
+		return false;
+	}
+	const RAPIDJSON_NAMESPACE::Value& isPrivate = itJsonIsPrivate->value;
+	if (!isPrivate.IsBool())
+	{
+		UPrintf(USTR("ERROR: is_private is not a bool member\n\n"));
+		return false;
+	}
+	m_bRepoIsPrivate = isPrivate.GetBool();
 	return true;
 }
