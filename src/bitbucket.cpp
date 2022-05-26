@@ -74,6 +74,10 @@ bool CBitbucket::CreateRepo()
 	{
 		return false;
 	}
+	if (getRepo())
+	{
+		return true;
+	}
 	if (m_bVerbose)
 	{
 		UPrintf(USTR("INFO: create repo %") PRIUS USTR(" project key %") PRIUS USTR("\n"), U8ToU(m_sWorkspace + "/" + m_sRepoName).c_str(), U8ToU(m_sProjectKey).c_str());
@@ -284,5 +288,46 @@ bool CBitbucket::getProject()
 		return false;
 	}
 	m_bRepoIsPrivate = isPrivate.GetBool();
+	return true;
+}
+
+bool CBitbucket::getRepo() const
+{
+	if (m_bVerbose)
+	{
+		UPrintf(USTR("INFO: get repo %") PRIUS USTR("\n"), U8ToU(m_sWorkspace + "/" + m_sRepoName).c_str());
+	}
+	CCurlHolder curlHolder;
+	CURL* pCurl = curlHolder.GetCurl();
+	if (pCurl == nullptr)
+	{
+		UPrintf(USTR("ERROR: curl init error\n\n"));
+		return false;
+	}
+	curlHolder.SetUserPassword(m_sUser + ":" + m_sAppPassword);
+	curlHolder.SetUrl("https://api.bitbucket.org/2.0/repositories/" + m_sWorkspace + "/" + m_sRepoName);
+	if (curlHolder.IsError())
+	{
+		UPrintf(USTR("ERROR: curl setup error\n\n"));
+		return false;
+	}
+	CURLcode eCode = curl_easy_perform(pCurl);
+	if (eCode != CURLE_OK)
+	{
+		UPrintf(USTR("ERROR: curl perform error %d\n\n"), eCode);
+		return false;
+	}
+	long nStatusCode = 0;
+	eCode = curl_easy_getinfo(pCurl, CURLINFO_RESPONSE_CODE, &nStatusCode);
+	string sResponse = curlHolder.GetData();
+	if (m_bVerbose)
+	{
+		UPrintf(USTR("INFO: response\n%") PRIUS USTR("\n"), U8ToU(sResponse).c_str());
+	}
+	if (eCode != CURLE_OK || nStatusCode != 200)
+	{
+		UPrintf(USTR("ERROR: get repo error %d code %ld\n\n"), eCode, nStatusCode);
+		return false;
+	}
 	return true;
 }

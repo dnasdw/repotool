@@ -35,6 +35,7 @@ public:
 	void SetType(const UString& a_sType);
 	void SetWorkspace(const UString& a_sWorkspace);
 	void SetUser(const UString& a_sUser);
+	void SetUpdateImport(bool a_bUpdateImport);
 	void SetVerbose(bool a_bVerbose);
 	bool Unpack();
 	bool Pack();
@@ -60,6 +61,8 @@ public:
 	static const string s_sConfigKeyGitUserEmail;
 	static const string s_sRemoteInitCreateRemoteRepo;
 	static const string s_sRemoteInitGitRemoteAdd;
+	static const string s_sRemoteInitImporting;
+	static const string s_sRemoteInitImportingComplete;
 private:
 	bool initDir();
 	bool generateDataDirPath(bool a_bMakeDir);
@@ -85,6 +88,7 @@ private:
 	string m_sType;
 	string m_sWorkspace;
 	string m_sUser;
+	bool m_bUpdateImport;
 	bool m_bVerbose;
 	UString m_sSeperator;
 	string m_sRepoName;

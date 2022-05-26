@@ -25,6 +25,8 @@ const string CRepo::s_sConfigKeyGitUserName = "git.user.name";
 const string CRepo::s_sConfigKeyGitUserEmail = "git.user.email";
 const string CRepo::s_sRemoteInitCreateRemoteRepo = "create remote repo";
 const string CRepo::s_sRemoteInitGitRemoteAdd = "git remote add";
+const string CRepo::s_sRemoteInitImporting = "importing";
+const string CRepo::s_sRemoteInitImportingComplete = "importing complete";
 
 bool SRepoIndexData::Parse(const string& a_sLine)
 {
@@ -40,7 +42,8 @@ bool SRepoIndexData::Parse(const string& a_sLine)
 }
 
 CRepo::CRepo()
-	: m_bVerbose(false)
+	: m_bUpdateImport(false)
+	, m_bVerbose(false)
 	, m_sSeperator(USTR("/"))
 {
 }
@@ -76,6 +79,11 @@ void CRepo::SetWorkspace(const UString& a_sWorkspace)
 void CRepo::SetUser(const UString& a_sUser)
 {
 	m_sUser = UToU8(a_sUser);
+}
+
+void CRepo::SetUpdateImport(bool a_bUpdateImport)
+{
+	m_bUpdateImport = a_bUpdateImport;
 }
 
 void CRepo::SetVerbose(bool a_bVerbose)
@@ -817,6 +825,7 @@ bool CRepo::Upload()
 	{
 		return false;
 	}
+	vector<pair<string, string>> vTypeWorkspace;
 	vector<string> vRemote = SplitOf(sRemote, "\r\n");
 	for (vector<string>::const_iterator it = vRemote.begin(); it != vRemote.end(); ++it)
 	{
@@ -837,6 +846,7 @@ bool CRepo::Upload()
 		{
 			return true;
 		}
+		vTypeWorkspace.push_back(make_pair(sType, sWorkspace));
 	}
 	m_sRemoteName = m_sType + "_" + m_sWorkspace;
 	UString sRemoteTempFileName = U8ToU(m_sRemoteName + ".txt");
@@ -880,9 +890,10 @@ bool CRepo::Upload()
 		nRepoCount = nRepoIndex + 1;
 		break;
 	}
+	bool bAllComplete = true;
 	for (n32 nRepoIndex = 0; nRepoIndex < nRepoCount; nRepoIndex++)
 	{
-		if (!generateRepoDirPath(nRepoIndex, false))
+		if (!generateRepoDirPath(nRepoIndex, true))
 		{
 			return false;
 		}
@@ -910,6 +921,84 @@ bool CRepo::Upload()
 			if (!sLine.empty())
 			{
 				sRemoteInit.insert(sLine);
+			}
+		}
+		if (sRemoteInit.find(s_sRemoteInitImportingComplete) != sRemoteInit.end())
+		{
+			continue;
+		}
+		if (sRemoteInit.find(s_sRemoteInitImporting) != sRemoteInit.end())
+		{
+			if (m_sType == CGithub::s_sTypeName)
+			{
+				CGithub github;
+				github.SetWorkspace(m_sWorkspace);
+				github.SetRepoName(m_sRepoName);
+				github.SetUser(m_sUser);
+				github.SetPersonalAccessToken(m_sPassword);
+				github.SetVerbose(m_bVerbose);
+				bool bResult = github.GetImportStatus();
+				if (bResult)
+				{
+					string sImportStatusString = github.GetImportStatusString();
+					if (sImportStatusString == CGithub::s_sImportStatusImporting)
+					{
+						if (m_bUpdateImport)
+						{
+							bResult = github.PatchImportRepo();
+							if (bResult)
+							{
+								sImportStatusString = github.GetImportStatusString();
+								if (sImportStatusString == CGithub::s_sImportStatusComplete)
+								{
+									sRemoteInit.insert(s_sRemoteInitImportingComplete);
+									sRemoteTemp += s_sRemoteInitImportingComplete + "\n";
+									writeTextFile(sRemoteTempFilePath, sRemoteTemp);
+								}
+								else
+								{
+									bAllComplete = false;
+								}
+							}
+						}
+						else
+						{
+							bAllComplete = false;
+						}
+					}
+					else if (sImportStatusString == CGithub::s_sImportStatusComplete)
+					{
+						sRemoteInit.insert(s_sRemoteInitImportingComplete);
+						sRemoteTemp += s_sRemoteInitImportingComplete + "\n";
+						writeTextFile(sRemoteTempFilePath, sRemoteTemp);
+					}
+					else if (sImportStatusString == CGithub::s_sImportStatusError)
+					{
+						bResult = github.PatchImportRepo();
+						if (bResult)
+						{
+							sImportStatusString = github.GetImportStatusString();
+							if (sImportStatusString == CGithub::s_sImportStatusComplete)
+							{
+								sRemoteInit.insert(s_sRemoteInitImportingComplete);
+								sRemoteTemp += s_sRemoteInitImportingComplete + "\n";
+								writeTextFile(sRemoteTempFilePath, sRemoteTemp);
+							}
+							else
+							{
+								bAllComplete = false;
+							}
+						}
+					}
+				}
+				if (bResult)
+				{
+					continue;
+				}
+				else
+				{
+					return false;
+				}
 			}
 		}
 		if (!gitInitMaster())
@@ -940,10 +1029,7 @@ bool CRepo::Upload()
 				}
 				sRemoteInit.insert(s_sRemoteInitCreateRemoteRepo);
 				sRemoteTemp += s_sRemoteInitCreateRemoteRepo + "\n";
-				if (!writeTextFile(sRemoteTempFilePath, sRemoteTemp))
-				{
-					return false;
-				}
+				writeTextFile(sRemoteTempFilePath, sRemoteTemp);
 			}
 			sRemoteURL = bitbucket.GetRepoRemoteHttpsURL();
 			m_sRepoPushURL = bitbucket.GetRepoPushHttpsURL();
@@ -965,10 +1051,7 @@ bool CRepo::Upload()
 				}
 				sRemoteInit.insert(s_sRemoteInitCreateRemoteRepo);
 				sRemoteTemp += s_sRemoteInitCreateRemoteRepo + "\n";
-				if (!writeTextFile(sRemoteTempFilePath, sRemoteTemp))
-				{
-					return false;
-				}
+				writeTextFile(sRemoteTempFilePath, sRemoteTemp);
 			}
 			sRemoteURL = github.GetRepoRemoteHttpsURL();
 			m_sRepoPushURL = github.GetRepoPushHttpsURL();
@@ -986,10 +1069,70 @@ bool CRepo::Upload()
 			}
 			sRemoteInit.insert(s_sRemoteInitGitRemoteAdd);
 			sRemoteTemp += s_sRemoteInitGitRemoteAdd + "\n";
-			if (!writeTextFile(sRemoteTempFilePath, sRemoteTemp))
+			writeTextFile(sRemoteTempFilePath, sRemoteTemp);
+		}
+		bool bResult = false;
+		for (vector<pair<string, string>>::const_iterator itTypeWorkspace = vTypeWorkspace.begin(); itTypeWorkspace != vTypeWorkspace.end(); ++itTypeWorkspace)
+		{
+			const string& sType = itTypeWorkspace->first;
+			const string& sWorkspace = itTypeWorkspace->second;
+			string sSourceRemoteURL;
+			if (sType == CBitbucket::s_sTypeName)
 			{
-				return false;
+				CBitbucket bitbucket;
+				bitbucket.SetWorkspace(sWorkspace);
+				bitbucket.SetRepoName(m_sRepoName);
+				bitbucket.SetVerbose(m_bVerbose);
+				sSourceRemoteURL = bitbucket.GetRepoRemoteHttpsURL();
 			}
+			else if (sType == CGithub::s_sTypeName)
+			{
+				CGithub github;
+				github.SetWorkspace(sWorkspace);
+				github.SetRepoName(m_sRepoName);
+				github.SetVerbose(m_bVerbose);
+				sSourceRemoteURL = github.GetRepoRemoteHttpsURL();
+			}
+			if (m_sType == CGithub::s_sTypeName)
+			{
+				CGithub github;
+				github.SetWorkspace(m_sWorkspace);
+				github.SetRepoName(m_sRepoName);
+				github.SetUser(m_sUser);
+				github.SetPersonalAccessToken(m_sPassword);
+				github.SetSourceRemoteURL(sSourceRemoteURL);
+				github.SetVerbose(m_bVerbose);
+				bResult = github.StartImportRepo();
+				if (bResult)
+				{
+					sRemoteInit.insert(s_sRemoteInitImporting);
+					sRemoteTemp += s_sRemoteInitImporting + "\n";
+					writeTextFile(sRemoteTempFilePath, sRemoteTemp);
+					string sImportStatusString = github.GetImportStatusString();
+					if (sImportStatusString == CGithub::s_sImportStatusImporting)
+					{
+						bAllComplete = false;
+					}
+					else if (sImportStatusString == CGithub::s_sImportStatusComplete)
+					{
+						sRemoteInit.insert(s_sRemoteInitImportingComplete);
+						sRemoteTemp += s_sRemoteInitImportingComplete + "\n";
+						writeTextFile(sRemoteTempFilePath, sRemoteTemp);
+					}
+					else if (sImportStatusString == CGithub::s_sImportStatusError)
+					{
+						bAllComplete = false;
+					}
+				}
+			}
+			if (bResult)
+			{
+				break;
+			}
+		}
+		if (bResult)
+		{
+			continue;
 		}
 		vector<SRepoIndexData> vRepoIndexData;
 		bool bSpecialPath[2] = { false, false };
@@ -1112,10 +1255,13 @@ bool CRepo::Upload()
 			}
 		}
 	}
-	sRemote += m_sType + "\t" + m_sWorkspace + "\n";
-	if (!writeTextFile(m_sDataRemoteFilePath, sRemote))
+	if (bAllComplete)
 	{
-		return false;
+		sRemote += m_sType + "\t" + m_sWorkspace + "\n";
+		if (!writeTextFile(m_sDataRemoteFilePath, sRemote))
+		{
+			return false;
+		}
 	}
 	UChdir(m_sCurrentWorkingDirPath.c_str());
 	return true;

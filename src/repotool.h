@@ -52,6 +52,7 @@ private:
 	UString m_sType;
 	UString m_sWorkspace;
 	UString m_sUser;
+	bool m_bUpdateImport;
 	UString m_sMessage;
 };
 

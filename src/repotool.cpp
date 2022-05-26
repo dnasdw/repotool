@@ -21,12 +21,14 @@ CRepoTool::SOption CRepoTool::s_Option[] =
 	{ USTR("type"), USTR('t'), USTR("[bitbucket|github]\n\t\tthe repository type") },
 	{ USTR("workspace"), 0, USTR("the workspace of the repository") },
 	{ USTR("user"), 0, USTR("the user for the repository") },
+	{ USTR("update-import"), 0, USTR("force update import if not complete") },
 	{ nullptr, 0, nullptr }
 };
 
 CRepoTool::CRepoTool()
 	: m_eAction(kActionNone)
 	, m_bVerbose(false)
+	, m_bUpdateImport(false)
 {
 }
 
@@ -335,6 +337,10 @@ CRepoTool::EParseOptionReturn CRepoTool::parseOptions(const UChar* a_pName, int&
 		}
 		m_sUser = a_pArgv[++a_nIndex];
 	}
+	else if (UCscmp(a_pName, USTR("update-import")) == 0)
+	{
+		m_bUpdateImport = true;
+	}
 	return kParseOptionReturnSuccess;
 }
 
@@ -390,6 +396,7 @@ bool CRepoTool::upload()
 		repo.SetWorkspace(m_sUser);
 	}
 	repo.SetUser(m_sUser);
+	repo.SetUpdateImport(m_bUpdateImport);
 	repo.SetVerbose(m_bVerbose);
 	bool bResult = repo.Upload();
 	CCurlGlobalHolder::Finalize();

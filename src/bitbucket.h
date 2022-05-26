@@ -33,6 +33,7 @@ public:
 private:
 	bool createProject();
 	bool getProject();
+	bool getRepo() const;
 	string m_sWorkspace;
 	string m_sRepoName;
 	string m_sUser;
