@@ -1144,10 +1144,7 @@ bool CRepo::Upload()
 		}
 		if (sRemoteInit.find(s_sRemoteInitGitRemoteAdd) == sRemoteInit.end())
 		{
-			if (!gitRemoteAdd(sRemoteURL))
-			{
-				return false;
-			}
+			gitRemoteAdd(sRemoteURL);
 			sRemoteInit.insert(s_sRemoteInitGitRemoteAdd);
 			sRemoteTemp += s_sRemoteInitGitRemoteAdd + "\n";
 			writeTextFile(sRemoteTempFilePath, sRemoteTemp);
