@@ -21,6 +21,7 @@ public:
 		kActionPack,
 		kActionUpload,
 		kActionDownload,
+		kActionImport,
 		kActionSample,
 		kActionHelp
 	};
@@ -33,18 +34,19 @@ public:
 	CRepoTool();
 	~CRepoTool();
 	int ParseOptions(int a_nArgc, UChar* a_pArgv[]);
-	int CheckOptions();
-	int Help();
-	int Action();
+	int CheckOptions() const;
+	int Help() const;
+	int Action() const;
 	static SOption s_Option[];
 private:
 	EParseOptionReturn parseOptions(const UChar* a_pName, int& a_nIndex, int a_nArgc, UChar* a_pArgv[]);
 	EParseOptionReturn parseOptions(int a_nKey, int& a_nIndex, int a_nArgc, UChar* a_pArgv[]);
-	bool unpack();
-	bool pack();
-	bool upload();
-	bool download();
-	int sample();
+	bool unpack() const;
+	bool pack() const;
+	bool upload() const;
+	bool download() const;
+	bool import() const;
+	int sample() const;
 	EAction m_eAction;
 	UString m_sInputPath;
 	UString m_sOutputPath;
@@ -53,6 +55,8 @@ private:
 	UString m_sWorkspace;
 	UString m_sUser;
 	bool m_bUpdateImport;
+	string m_sImportParam;
+	string m_sImportKey;
 	UString m_sMessage;
 };
 

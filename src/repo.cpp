@@ -2,6 +2,7 @@
 #include <omp.h>
 #include "bitbucket.h"
 #include "crc32.h"
+#include "crypto.h"
 #include "github.h"
 #include "md5.h"
 #include "path.h"
@@ -27,6 +28,16 @@ const string CRepo::s_sRemoteInitCreateRemoteRepo = "create remote repo";
 const string CRepo::s_sRemoteInitGitRemoteAdd = "git remote add";
 const string CRepo::s_sRemoteInitImporting = "importing";
 const string CRepo::s_sRemoteInitImportingComplete = "importing complete";
+const string CRepo::s_sImportParamFromType = "from_type";
+const string CRepo::s_sImportParamFromWorkspace = "from_workspace";
+const string CRepo::s_sImportParamFromRepoName = "from_repo_name";
+const string CRepo::s_sImportParamFromUser = "from_user";
+const string CRepo::s_sImportParamFromPassword = "from_password";
+const string CRepo::s_sImportParamToType = "to_type";
+const string CRepo::s_sImportParamToWorkspace = "to_workspace";
+const string CRepo::s_sImportParamToRepoName = "to_repo_name";
+const string CRepo::s_sImportParamToUser = "to_user";
+const string CRepo::s_sImportParamToPassword = "to_password";
 
 bool SRepoIndexData::Parse(const string& a_sLine)
 {
@@ -45,6 +56,7 @@ CRepo::CRepo()
 	: m_bUpdateImport(false)
 	, m_bVerbose(false)
 	, m_sSeperator(USTR("/"))
+	, m_bHasGithubImporter(false)
 {
 }
 
@@ -84,6 +96,16 @@ void CRepo::SetUser(const UString& a_sUser)
 void CRepo::SetUpdateImport(bool a_bUpdateImport)
 {
 	m_bUpdateImport = a_bUpdateImport;
+}
+
+void CRepo::SetImportParam(const string& a_sImportParam)
+{
+	m_sImportParam = a_sImportParam;
+}
+
+void CRepo::SetImportKey(const string& a_sImportKey)
+{
+	m_sImportKey = a_sImportKey;
 }
 
 void CRepo::SetVerbose(bool a_bVerbose)
@@ -791,6 +813,7 @@ bool CRepo::Upload()
 	{
 		return false;
 	}
+	m_bHasGithubImporter = loadGithubImporterSecretConfig();
 	if (!loadUser())
 	{
 		return false;
@@ -849,7 +872,6 @@ bool CRepo::Upload()
 		vTypeWorkspace.push_back(make_pair(sType, sWorkspace));
 	}
 	m_sRemoteName = m_sType + "_" + m_sWorkspace;
-	UString sRemoteTempFileName = U8ToU(m_sRemoteName + ".txt");
 	string sDataIndex;
 	if (!readTextFile(m_sDataIndexFilePath, sDataIndex))
 	{
@@ -902,7 +924,8 @@ bool CRepo::Upload()
 			UPrintf(USTR("ERROR: change dir %") PRIUS USTR(" failed\n\n"), m_sRepoDirPath.c_str());
 			return false;
 		}
-		UString sRemoteTempFilePath = s_sTempDirName + USTR("/") + sRemoteTempFileName;
+		UString sRemoteImportTempFilePath = s_sTempDirName + U8ToU("/" + m_sRemoteName + "_import.txt");
+		UString sRemoteTempFilePath = s_sTempDirName + U8ToU("/" + m_sRemoteName + ".txt");
 		string sRemoteTemp;
 		FILE* fp = UFopen(sRemoteTempFilePath, USTR("rb"), false);
 		if (fp != nullptr)
@@ -989,6 +1012,64 @@ bool CRepo::Upload()
 								bAllComplete = false;
 							}
 						}
+					}
+				}
+				if (bResult)
+				{
+					continue;
+				}
+				else
+				{
+					return false;
+				}
+			}
+			else if (m_bHasGithubImporter)
+			{
+				CGithub githubImportRecorder;
+				githubImportRecorder.SetWorkspace(m_mConfig[CGithub::s_sConfigKeyImportRecorderWorkspace]);
+				githubImportRecorder.SetRepoName(m_mConfig[CGithub::s_sConfigKeyImportRecorderRepoName]);
+				githubImportRecorder.SetUser(m_mConfig[CGithub::s_sConfigKeyImportRecorderUser]);
+				githubImportRecorder.SetPersonalAccessToken(m_mConfig[CGithub::s_sConfigKeyImportRecorderPersonalAccessToken]);
+				githubImportRecorder.SetVerbose(m_bVerbose);
+				string sImportRecorderFilePath = generateImportRecorderFilePath(m_sType, m_sWorkspace, m_sRepoName);
+				bool bResult = githubImportRecorder.FileExist(sImportRecorderFilePath);
+				if (bResult)
+				{
+					sRemoteInit.insert(s_sRemoteInitImportingComplete);
+					sRemoteTemp += s_sRemoteInitImportingComplete + "\n";
+					writeTextFile(sRemoteTempFilePath, sRemoteTemp);
+				}
+				else
+				{
+					if (m_bUpdateImport)
+					{
+						string sImportParam;
+						if (!readTextFile(sRemoteImportTempFilePath, sImportParam))
+						{
+							return false;
+						}
+						string sImportKey = FGenerateKey(m_sImportKey);
+						m_sImportParam = FEncryptString(sImportParam, sImportKey);
+#ifdef DEBUG_LOCAL_IMPORT
+						bResult = Import();
+#else	// DEBUG_LOCAL_IMPORT
+						CGithub github;
+						github.SetWorkspace(m_mConfig[CGithub::s_sConfigKeyImporterWorkspace]);
+						github.SetRepoName(m_mConfig[CGithub::s_sConfigKeyImporterRepoName]);
+						github.SetUser(m_mConfig[CGithub::s_sConfigKeyImporterUser]);
+						github.SetPersonalAccessToken(m_mConfig[CGithub::s_sConfigKeyImporterPersonalAccessToken]);
+						github.SetVerbose(m_bVerbose);
+						bResult = github.TriggerWorkflowImport(m_mConfig[CGithub::s_sConfigKeyImporterWorkflowFileName], m_sImportParam);
+#endif	// DEBUG_LOCAL_IMPORT
+						if (bResult)
+						{
+							bAllComplete = false;
+						}
+					}
+					else
+					{
+						bResult = true;
+						bAllComplete = false;
 					}
 				}
 				if (bResult)
@@ -1100,9 +1181,8 @@ bool CRepo::Upload()
 				github.SetRepoName(m_sRepoName);
 				github.SetUser(m_sUser);
 				github.SetPersonalAccessToken(m_sPassword);
-				github.SetSourceRemoteURL(sSourceRemoteURL);
 				github.SetVerbose(m_bVerbose);
-				bResult = github.StartImportRepo();
+				bResult = github.StartImportRepo(sSourceRemoteURL);
 				if (bResult)
 				{
 					sRemoteInit.insert(s_sRemoteInitImporting);
@@ -1123,6 +1203,45 @@ bool CRepo::Upload()
 					{
 						bAllComplete = false;
 					}
+				}
+			}
+			else if (m_bHasGithubImporter)
+			{
+				string sImportParam = s_sImportParamFromType + "=" + sType;
+				sImportParam += " " + s_sImportParamFromWorkspace + "=" + sWorkspace;
+				sImportParam += " " + s_sImportParamFromRepoName + "=" + m_sRepoName;
+				sImportParam += " " + s_sImportParamToType + "=" + m_sType;
+				sImportParam += " " + s_sImportParamToWorkspace + "=" + m_sWorkspace;
+				sImportParam += " " + s_sImportParamToRepoName + "=" + m_sRepoName;
+				sImportParam += " " + s_sImportParamToUser + "=" + m_sUser;
+				sImportParam += " " + s_sImportParamToPassword + "=" + m_sPassword;
+				sImportParam += " " + CGithub::s_sConfigKeyImportRecorderWorkspace + "=" + m_mConfig[CGithub::s_sConfigKeyImportRecorderWorkspace];
+				sImportParam += " " + CGithub::s_sConfigKeyImportRecorderRepoName + "=" + m_mConfig[CGithub::s_sConfigKeyImportRecorderRepoName];
+				sImportParam += " " + CGithub::s_sConfigKeyImportRecorderUser + "=" + m_mConfig[CGithub::s_sConfigKeyImportRecorderUser];
+				sImportParam += " " + CGithub::s_sConfigKeyImportRecorderPersonalAccessToken + "=" + m_mConfig[CGithub::s_sConfigKeyImportRecorderPersonalAccessToken];
+				bool bResultForUpdateImport = writeTextFile(sRemoteImportTempFilePath, sImportParam);
+				string sImportKey = FGenerateKey(m_sImportKey);
+				m_sImportParam = FEncryptString(sImportParam, sImportKey);
+#ifdef DEBUG_LOCAL_IMPORT
+				bResult = Import();
+#else	// DEBUG_LOCAL_IMPORT
+				CGithub github;
+				github.SetWorkspace(m_mConfig[CGithub::s_sConfigKeyImporterWorkspace]);
+				github.SetRepoName(m_mConfig[CGithub::s_sConfigKeyImporterRepoName]);
+				github.SetUser(m_mConfig[CGithub::s_sConfigKeyImporterUser]);
+				github.SetPersonalAccessToken(m_mConfig[CGithub::s_sConfigKeyImporterPersonalAccessToken]);
+				github.SetVerbose(m_bVerbose);
+				bResult = github.TriggerWorkflowImport(m_mConfig[CGithub::s_sConfigKeyImporterWorkflowFileName], m_sImportParam);
+#endif	// DEBUG_LOCAL_IMPORT
+				if (bResult)
+				{
+					if (bResultForUpdateImport)
+					{
+						sRemoteInit.insert(s_sRemoteInitImporting);
+						sRemoteTemp += s_sRemoteInitImporting + "\n";
+						writeTextFile(sRemoteTempFilePath, sRemoteTemp);
+					}
+					bAllComplete = false;
 				}
 			}
 			if (bResult)
@@ -1241,7 +1360,7 @@ bool CRepo::Upload()
 			{
 				return false;
 			}
-			if (!gitPush())
+			if (!gitPush(false))
 			{
 				return false;
 			}
@@ -1249,7 +1368,7 @@ bool CRepo::Upload()
 		}
 		if (!bPush)
 		{
-			if (!gitPush())
+			if (!gitPush(false))
 			{
 				return false;
 			}
@@ -1464,7 +1583,7 @@ bool CRepo::Download()
 				sRemoteTemp += s_sRemoteInitGitRemoteAdd + "\n";
 				writeTextFile(sRemoteTempFilePath, sRemoteTemp);
 			}
-			if (!gitPull(sRemoteURL))
+			if (!gitPull(sRemoteURL, false))
 			{
 				continue;
 			}
@@ -1478,6 +1597,266 @@ bool CRepo::Download()
 		}
 	}
 	return true;
+}
+
+bool CRepo::Import()
+{
+	string sImportKey = FGenerateKey(m_sImportKey);
+	string sDecryptedImportParam = FDecryptString(m_sImportParam, sImportKey);
+	string sFromType;
+	string sFromWorkspace;
+	string sFromRepoName;
+	string sFromUser;
+	string sFromPassword;
+	string sToType;
+	string sToWorkspace;
+	string sToRepoName;
+	string sToUser;
+	string sToPassword;
+	string sImportRecorderWorkspace;
+	string sImportRecorderRepoName;
+	string sImportRecorderUser;
+	string sImportRecorderPersonalAccessToken;
+	vector<string> vParam = Split(sDecryptedImportParam, " ");
+	for (vector<string>::const_iterator it = vParam.begin(); it != vParam.end(); ++it)
+	{
+		const string& sParam = *it;
+		string::size_type uPos = sParam.find("=");
+		if (uPos == string::npos)
+		{
+			UPrintf(USTR("ERROR: import param format error\n\n"));
+			return false;
+		}
+		string sParamKey = sParam.substr(0, uPos);
+		string sParamValue = sParam.substr(uPos + 1);
+		if (sParamKey == s_sImportParamFromType)
+		{
+			sFromType = sParamValue;
+		}
+		else if (sParamKey == s_sImportParamFromWorkspace)
+		{
+			sFromWorkspace = sParamValue;
+		}
+		else if (sParamKey == s_sImportParamFromRepoName)
+		{
+			sFromRepoName = sParamValue;
+		}
+		else if (sParamKey == s_sImportParamFromUser)
+		{
+			sFromUser = sParamValue;
+		}
+		else if (sParamKey == s_sImportParamFromPassword)
+		{
+			sFromPassword = sParamValue;
+		}
+		else if (sParamKey == s_sImportParamToType)
+		{
+			sToType = sParamValue;
+		}
+		else if (sParamKey == s_sImportParamToWorkspace)
+		{
+			sToWorkspace = sParamValue;
+		}
+		else if (sParamKey == s_sImportParamToRepoName)
+		{
+			sToRepoName = sParamValue;
+		}
+		else if (sParamKey == s_sImportParamToUser)
+		{
+			sToUser = sParamValue;
+		}
+		else if (sParamKey == s_sImportParamToPassword)
+		{
+			sToPassword = sParamValue;
+		}
+		else if (sParamKey == CGithub::s_sConfigKeyImportRecorderWorkspace)
+		{
+			sImportRecorderWorkspace = sParamValue;
+		}
+		else if (sParamKey == CGithub::s_sConfigKeyImportRecorderRepoName)
+		{
+			sImportRecorderRepoName = sParamValue;
+		}
+		else if (sParamKey == CGithub::s_sConfigKeyImportRecorderUser)
+		{
+			sImportRecorderUser = sParamValue;
+		}
+		else if (sParamKey == CGithub::s_sConfigKeyImportRecorderPersonalAccessToken)
+		{
+			sImportRecorderPersonalAccessToken = sParamValue;
+		}
+		else
+		{
+			UPrintf(USTR("ERROR: import param has unknown key\n\n"));
+			return false;
+		}
+	}
+	if (sFromType != CBitbucket::s_sTypeName && sFromType != CGithub::s_sTypeName)
+	{
+		UPrintf(USTR("ERROR: unknown %") PRIUS USTR("\n\n"), U8ToU(s_sImportParamFromType).c_str());
+		return false;
+	}
+	if (sFromWorkspace.empty())
+	{
+		UPrintf(USTR("ERROR: %") PRIUS USTR(" is empty\n\n"), U8ToU(s_sImportParamFromWorkspace).c_str());
+		return false;
+	}
+	if (sFromRepoName.empty())
+	{
+		UPrintf(USTR("ERROR: %") PRIUS USTR(" is empty\n\n"), U8ToU(s_sImportParamFromRepoName).c_str());
+		return false;
+	}
+	if (sToType != CBitbucket::s_sTypeName && sToType != CGithub::s_sTypeName)
+	{
+		UPrintf(USTR("ERROR: unknown %") PRIUS USTR("\n\n"), U8ToU(s_sImportParamToType).c_str());
+		return false;
+	}
+	if (sToWorkspace.empty())
+	{
+		UPrintf(USTR("ERROR: %") PRIUS USTR(" is empty\n\n"), U8ToU(s_sImportParamToWorkspace).c_str());
+		return false;
+	}
+	if (sToRepoName.empty())
+	{
+		UPrintf(USTR("ERROR: %") PRIUS USTR(" is empty\n\n"), U8ToU(s_sImportParamToRepoName).c_str());
+		return false;
+	}
+	if (sToUser.empty())
+	{
+		UPrintf(USTR("ERROR: %") PRIUS USTR(" is empty\n\n"), U8ToU(s_sImportParamToUser).c_str());
+		return false;
+	}
+	if (sToPassword.empty())
+	{
+		UPrintf(USTR("ERROR: %") PRIUS USTR(" is empty\n\n"), U8ToU(s_sImportParamToPassword).c_str());
+		return false;
+	}
+	if (sImportRecorderWorkspace.empty())
+	{
+		UPrintf(USTR("ERROR: %") PRIUS USTR(" is empty\n\n"), U8ToU(CGithub::s_sConfigKeyImportRecorderWorkspace).c_str());
+		return false;
+	}
+	if (sImportRecorderRepoName.empty())
+	{
+		UPrintf(USTR("ERROR: %") PRIUS USTR(" is empty\n\n"), U8ToU(CGithub::s_sConfigKeyImportRecorderRepoName).c_str());
+		return false;
+	}
+	if (sImportRecorderUser.empty())
+	{
+		UPrintf(USTR("ERROR: %") PRIUS USTR(" is empty\n\n"), U8ToU(CGithub::s_sConfigKeyImportRecorderUser).c_str());
+		return false;
+	}
+	if (sImportRecorderPersonalAccessToken.empty())
+	{
+		UPrintf(USTR("ERROR: %") PRIUS USTR(" is empty\n\n"), U8ToU(CGithub::s_sConfigKeyImportRecorderPersonalAccessToken).c_str());
+		return false;
+	}
+	string sRemoteURL;
+	if (sFromType == CBitbucket::s_sTypeName)
+	{
+		CBitbucket bitbucket;
+		bitbucket.SetWorkspace(sFromWorkspace);
+		bitbucket.SetRepoName(sFromRepoName);
+		bitbucket.SetVerbose(m_bVerbose);
+		if (!sFromUser.empty() && !sFromPassword.empty())
+		{
+			bitbucket.SetUser(sFromUser);
+			bitbucket.SetAppPassword(sFromPassword);
+			sRemoteURL = bitbucket.GetRepoPushHttpsURL();
+		}
+		else
+		{
+			sRemoteURL = bitbucket.GetRepoRemoteHttpsURL();
+		}
+	}
+	else if (sFromType == CGithub::s_sTypeName)
+	{
+		CGithub github;
+		github.SetWorkspace(sFromWorkspace);
+		github.SetRepoName(sFromRepoName);
+		github.SetVerbose(m_bVerbose);
+		if (!sFromUser.empty() && !sFromPassword.empty())
+		{
+			github.SetUser(sFromUser);
+			github.SetPersonalAccessToken(sFromPassword);
+			sRemoteURL = github.GetRepoPushHttpsURL();
+		}
+		else
+		{
+			sRemoteURL = github.GetRepoRemoteHttpsURL();
+		}
+	}
+	if (sToType == CBitbucket::s_sTypeName)
+	{
+		CBitbucket bitbucket;
+		bitbucket.SetWorkspace(sToWorkspace);
+		bitbucket.SetRepoName(sToRepoName);
+		bitbucket.SetUser(sToUser);
+		bitbucket.SetAppPassword(sToPassword);
+		bitbucket.SetVerbose(m_bVerbose);
+		m_sRepoPushURL = bitbucket.GetRepoPushHttpsURL();
+	}
+	else if (sToType == CGithub::s_sTypeName)
+	{
+		CGithub github;
+		github.SetWorkspace(sToWorkspace);
+		github.SetRepoName(sToRepoName);
+		github.SetUser(sToUser);
+		github.SetPersonalAccessToken(sToPassword);
+		github.SetVerbose(m_bVerbose);
+		m_sRepoPushURL = github.GetRepoPushHttpsURL();
+	}
+	if (!UMakeDir(s_sTempDirName))
+	{
+		UPrintf(USTR("ERROR: make dir %") PRIUS USTR(" failed\n\n"), s_sTempDirName.c_str());
+		return false;
+	}
+	if (UChdir(s_sTempDirName.c_str()) != 0)
+	{
+		UPrintf(USTR("ERROR: change dir %") PRIUS USTR(" failed\n\n"), s_sTempDirName.c_str());
+		return false;
+	}
+	bool bResult = true;
+	do
+	{
+		if (!gitInitMaster())
+		{
+			break;
+		}
+		if (!gitPull(sRemoteURL, true))
+		{
+			break;
+		}
+		if (!gitPush(true))
+		{
+			break;
+		}
+	} while (false);
+	UChdir(USTR(".."));
+	if (!bResult)
+	{
+		return false;
+	}
+	CGithub github;
+	github.SetWorkspace(sImportRecorderWorkspace);
+	github.SetRepoName(sImportRecorderRepoName);
+	github.SetUser(sImportRecorderUser);
+	github.SetPersonalAccessToken(sImportRecorderPersonalAccessToken);
+	github.SetVerbose(m_bVerbose);
+	string sImportRecorderFilePath = generateImportRecorderFilePath(sToType, sToWorkspace, sToRepoName);
+	bResult = github.CreateEmptyFile(sImportRecorderFilePath);
+	if (!bResult)
+	{
+		UPrintf(USTR("ERROR: create empty file %") PRIUS USTR(" failed\n\n"), U8ToU(sImportRecorderFilePath).c_str());
+		return false;
+	}
+	return true;
+}
+
+string CRepo::generateImportRecorderFilePath(const string& a_sType, const string& a_sWorkspace, const string& a_sRepoName)
+{
+	string sImportRecorderFilePath = "data/" + a_sType + "/" + a_sWorkspace + "/" + a_sRepoName + ".txt";
+	return sImportRecorderFilePath;
 }
 
 bool CRepo::initDir()
@@ -1705,6 +2084,90 @@ bool CRepo::loadConfig()
 			return false;
 		}
 	}
+	return true;
+}
+
+bool CRepo::loadGithubImporterSecretConfig()
+{
+	UString sGithubImporterConfigFilePath = m_sRootDirPath + USTR("/secret_config_github_importer.txt");
+	string sGithubImporterConfig;
+	if (!readTextFile(sGithubImporterConfigFilePath, sGithubImporterConfig))
+	{
+		return false;
+	}
+	vector<string> vGithubImporterConfig = SplitOf(sGithubImporterConfig, "\r\n");
+	for (vector<string>::const_iterator it = vGithubImporterConfig.begin(); it != vGithubImporterConfig.end(); ++it)
+	{
+		const string& sLine = *it;
+		if (sLine.empty())
+		{
+			continue;
+		}
+		vector<string> vLine = Split(sLine, "\t");
+		if (vLine.size() != 2)
+		{
+			UPrintf(USTR("ERROR: parse github importer secret config failed\n\n"));
+			return false;
+		}
+		const string& sKey = vLine[0];
+		const string& sValue = vLine[1];
+		if (!m_mConfig.insert(make_pair(sKey, sValue)).second)
+		{
+			UPrintf(USTR("ERROR: secret key %") PRIUS USTR(" already exists\n\n"), U8ToU(sKey).c_str());
+			return false;
+		}
+	}
+	if (m_mConfig.find(CGithub::s_sConfigKeyImportRecorderWorkspace) == m_mConfig.end())
+	{
+		UPrintf(USTR("ERROR: github importer secret config key %") PRIUS USTR(" does not exists\n\n"), U8ToU(CGithub::s_sConfigKeyImportRecorderWorkspace).c_str());
+		return false;
+	}
+	if (m_mConfig.find(CGithub::s_sConfigKeyImportRecorderRepoName) == m_mConfig.end())
+	{
+		UPrintf(USTR("ERROR: github importer secret config key %") PRIUS USTR(" does not exists\n\n"), U8ToU(CGithub::s_sConfigKeyImportRecorderRepoName).c_str());
+		return false;
+	}
+	if (m_mConfig.find(CGithub::s_sConfigKeyImportRecorderUser) == m_mConfig.end())
+	{
+		UPrintf(USTR("ERROR: github importer secret config key %") PRIUS USTR(" does not exists\n\n"), U8ToU(CGithub::s_sConfigKeyImportRecorderUser).c_str());
+		return false;
+	}
+	if (m_mConfig.find(CGithub::s_sConfigKeyImportRecorderPersonalAccessToken) == m_mConfig.end())
+	{
+		UPrintf(USTR("ERROR: github importer secret config key %") PRIUS USTR(" does not exists\n\n"), U8ToU(CGithub::s_sConfigKeyImportRecorderPersonalAccessToken).c_str());
+		return false;
+	}
+	if (m_mConfig.find(CGithub::s_sConfigKeyImporterWorkspace) == m_mConfig.end())
+	{
+		UPrintf(USTR("ERROR: github importer secret config key %") PRIUS USTR(" does not exists\n\n"), U8ToU(CGithub::s_sConfigKeyImporterWorkspace).c_str());
+		return false;
+	}
+	if (m_mConfig.find(CGithub::s_sConfigKeyImporterRepoName) == m_mConfig.end())
+	{
+		UPrintf(USTR("ERROR: github importer secret config key %") PRIUS USTR(" does not exists\n\n"), U8ToU(CGithub::s_sConfigKeyImporterRepoName).c_str());
+		return false;
+	}
+	if (m_mConfig.find(CGithub::s_sConfigKeyImporterWorkflowFileName) == m_mConfig.end())
+	{
+		UPrintf(USTR("ERROR: github importer secret config key %") PRIUS USTR(" does not exists\n\n"), U8ToU(CGithub::s_sConfigKeyImporterWorkflowFileName).c_str());
+		return false;
+	}
+	if (m_mConfig.find(CGithub::s_sConfigKeyImporterUser) == m_mConfig.end())
+	{
+		UPrintf(USTR("ERROR: github importer secret config key %") PRIUS USTR(" does not exists\n\n"), U8ToU(CGithub::s_sConfigKeyImporterUser).c_str());
+		return false;
+	}
+	if (m_mConfig.find(CGithub::s_sConfigKeyImporterPersonalAccessToken) == m_mConfig.end())
+	{
+		UPrintf(USTR("ERROR: github importer secret config key %") PRIUS USTR(" does not exists\n\n"), U8ToU(CGithub::s_sConfigKeyImporterPersonalAccessToken).c_str());
+		return false;
+	}
+	if (m_mConfig.find(CGithub::s_sConfigKeyImporterImportKey) == m_mConfig.end())
+	{
+		UPrintf(USTR("ERROR: github importer secret config key %") PRIUS USTR(" does not exists\n\n"), U8ToU(CGithub::s_sConfigKeyImporterImportKey).c_str());
+		return false;
+	}
+	m_sImportKey = m_mConfig[CGithub::s_sConfigKeyImporterImportKey];
 	return true;
 }
 
@@ -2024,9 +2487,17 @@ bool CRepo::gitCommit(const string& a_sCommitMessage) const
 	return true;
 }
 
-bool CRepo::gitPush() const
+bool CRepo::gitPush(bool a_bQuiet) const
 {
-	n32 nResult = system(("git push -u " + m_sRepoPushURL + " master").c_str());
+	n32 nResult = 0;
+	if (a_bQuiet)
+	{
+		nResult = system(("git push --quiet -u " + m_sRepoPushURL + " master").c_str());
+	}
+	else
+	{
+		nResult = system(("git push -u " + m_sRepoPushURL + " master").c_str());
+	}
 	if (nResult != 0)
 	{
 		UPrintf(USTR("ERROR: git push -u %") PRIUS USTR(" master failed\n\n"), U8ToU(m_sRepoPushURL).c_str());
@@ -2035,9 +2506,17 @@ bool CRepo::gitPush() const
 	return true;
 }
 
-bool CRepo::gitPull(const string& a_sRemoteURL) const
+bool CRepo::gitPull(const string& a_sRemoteURL, bool a_bQuiet) const
 {
-	n32 nResult = system(("git pull " + a_sRemoteURL + " master").c_str());
+	n32 nResult = 0;
+	if (a_bQuiet)
+	{
+		nResult = system(("git pull --quiet " + a_sRemoteURL + " master").c_str());
+	}
+	else
+	{
+		nResult = system(("git pull " + a_sRemoteURL + " master").c_str());
+	}
 	if (nResult != 0)
 	{
 		UPrintf(USTR("ERROR: git pull %") PRIUS USTR(" master failed\n\n"), U8ToU(a_sRemoteURL).c_str());

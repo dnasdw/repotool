@@ -7,6 +7,16 @@ const string CGithub::s_sTypeName = "github";
 const string CGithub::s_sImportStatusImporting = "importing";
 const string CGithub::s_sImportStatusComplete = "complete";
 const string CGithub::s_sImportStatusError = "error";
+const string CGithub::s_sConfigKeyImportRecorderWorkspace = "github.import.recorder.workspace";
+const string CGithub::s_sConfigKeyImportRecorderRepoName = "github.import.recorder.repo.name";
+const string CGithub::s_sConfigKeyImportRecorderUser = "github.import.recorder.user";
+const string CGithub::s_sConfigKeyImportRecorderPersonalAccessToken = "github.import.recorder.personal_access_token";
+const string CGithub::s_sConfigKeyImporterWorkspace = "github.importer.workspace";
+const string CGithub::s_sConfigKeyImporterRepoName = "github.importer.repo.name";
+const string CGithub::s_sConfigKeyImporterWorkflowFileName = "github.importer.workflow.file.name";
+const string CGithub::s_sConfigKeyImporterUser = "github.importer.user";
+const string CGithub::s_sConfigKeyImporterPersonalAccessToken = "github.importer.personal_access_token";
+const string CGithub::s_sConfigKeyImporterImportKey = "github.importer.import.key";
 
 bool SGithubUser::Parse(const vector<string>& a_vLine)
 {
@@ -51,11 +61,6 @@ void CGithub::SetPersonalAccessToken(const string& a_sPersonalAccessToken)
 void CGithub::SetUser(const string& a_sUser)
 {
 	m_sUser = a_sUser;
-}
-
-void CGithub::SetSourceRemoteURL(const string& a_sSourceRemoteURL)
-{
-	m_sSourceRemoteURL = a_sSourceRemoteURL;
 }
 
 void CGithub::SetVerbose(bool a_bVerbose)
@@ -197,7 +202,7 @@ bool CGithub::GetImportStatus()
 	return true;
 }
 
-bool CGithub::StartImportRepo()
+bool CGithub::StartImportRepo(const string& a_sSourceRemoteURL)
 {
 	if (GetImportStatus())
 	{
@@ -217,7 +222,7 @@ bool CGithub::StartImportRepo()
 	curlHolder.SetUserPassword(m_sUser + ":" + m_sPersonalAccessToken);
 	curlHolder.HeaderAppend("User-Agent: curl");
 	curlHolder.HeaderAppend("Accept: application/vnd.github.v3+json");
-	string sPostFields = "{\"vcs\": \"git\", \"vcs_url\": \"" + m_sSourceRemoteURL + "\"}";
+	string sPostFields = "{\"vcs\": \"git\", \"vcs_url\": \"" + a_sSourceRemoteURL + "\"}";
 	curlHolder.SetUrl("https://api.github.com/repos/" + m_sWorkspace + "/" + m_sRepoName + "/import");
 	if (curlHolder.IsError())
 	{
@@ -321,6 +326,173 @@ bool CGithub::PatchImportRepo()
 	}
 	if (!parseImportResponse(sResponse))
 	{
+		return false;
+	}
+	return true;
+}
+
+bool CGithub::TriggerWorkflowImport(const string& a_sWorkflowFileName, const string& a_sEncryptedImportParam) const
+{
+	if (m_bVerbose)
+	{
+		UPrintf(USTR("INFO: trigger workflow %") PRIUS USTR("\n"), U8ToU(m_sWorkspace + "/" + m_sRepoName + "/.github/workflows/" + a_sWorkflowFileName).c_str());
+	}
+	CCurlHolder curlHolder;
+	CURL* pCurl = curlHolder.GetCurl();
+	if (pCurl == nullptr)
+	{
+		UPrintf(USTR("ERROR: curl init error\n\n"));
+		return false;
+	}
+	curlHolder.SetUserPassword(m_sUser + ":" + m_sPersonalAccessToken);
+	curlHolder.HeaderAppend("User-Agent: curl");
+	curlHolder.HeaderAppend("Accept: application/vnd.github.v3+json");
+	string sPostFields = "{\"ref\": \"master\", \"inputs\": {\"import_param\": \"" + a_sEncryptedImportParam + "\"}}";
+	curlHolder.SetUrl("https://api.github.com/repos/" + m_sWorkspace + "/" + m_sRepoName + "/actions/workflows/" + a_sWorkflowFileName + "/dispatches");
+	if (curlHolder.IsError())
+	{
+		UPrintf(USTR("ERROR: curl setup error\n\n"));
+		return false;
+	}
+	CURLcode eCode = curl_easy_setopt(pCurl, CURLOPT_POST, 1L);
+	if (eCode != CURLE_OK)
+	{
+		UPrintf(USTR("ERROR: curl setup error %d\n\n"), eCode);
+		return false;
+	}
+	eCode = curl_easy_setopt(pCurl, CURLOPT_HTTPHEADER, curlHolder.GetHeader());
+	if (eCode != CURLE_OK)
+	{
+		UPrintf(USTR("ERROR: curl setup error %d\n\n"), eCode);
+		return false;
+	}
+	eCode = curl_easy_setopt(pCurl, CURLOPT_POSTFIELDS, sPostFields.c_str());
+	if (eCode != CURLE_OK)
+	{
+		UPrintf(USTR("ERROR: curl setup error %d\n\n"), eCode);
+		return false;
+	}
+	eCode = curl_easy_perform(pCurl);
+	if (eCode != CURLE_OK)
+	{
+		UPrintf(USTR("ERROR: curl perform error %d\n\n"), eCode);
+		return false;
+	}
+	long nStatusCode = 0;
+	eCode = curl_easy_getinfo(pCurl, CURLINFO_RESPONSE_CODE, &nStatusCode);
+	string sResponse = curlHolder.GetData();
+	if (m_bVerbose)
+	{
+		UPrintf(USTR("INFO: response\n%") PRIUS USTR("\n"), U8ToU(sResponse).c_str());
+	}
+	if (eCode != CURLE_OK || nStatusCode != 204)
+	{
+		UPrintf(USTR("ERROR: trigger workflow error %d code %ld\n\n"), eCode, nStatusCode);
+		return false;
+	}
+	return true;
+}
+
+bool CGithub::CreateEmptyFile(const string& a_sPath) const
+{
+	if (FileExist(a_sPath))
+	{
+		return true;
+	}
+	if (m_bVerbose)
+	{
+		UPrintf(USTR("INFO: create empty file %") PRIUS USTR(" in repo %") PRIUS USTR("\n"), U8ToU(a_sPath).c_str(), U8ToU(m_sWorkspace + "/" + m_sRepoName).c_str());
+	}
+	CCurlHolder curlHolder;
+	CURL* pCurl = curlHolder.GetCurl();
+	if (pCurl == nullptr)
+	{
+		UPrintf(USTR("ERROR: curl init error\n\n"));
+		return false;
+	}
+	curlHolder.SetUserPassword(m_sUser + ":" + m_sPersonalAccessToken);
+	curlHolder.HeaderAppend("User-Agent: curl");
+	curlHolder.HeaderAppend("Accept: application/vnd.github.v3+json");
+	string sPostFields = "{\"message\": \"" + a_sPath + "\", \"content\": \"\"}";
+	curlHolder.SetUrl("https://api.github.com/repos/" + m_sWorkspace + "/" + m_sRepoName + "/contents/" + a_sPath);
+	CURLcode eCode = curl_easy_setopt(pCurl, CURLOPT_CUSTOMREQUEST, "PUT");
+	if (eCode != CURLE_OK)
+	{
+		UPrintf(USTR("ERROR: curl setup error %d\n\n"), eCode);
+		return false;
+	}
+	eCode = curl_easy_setopt(pCurl, CURLOPT_HTTPHEADER, curlHolder.GetHeader());
+	if (eCode != CURLE_OK)
+	{
+		UPrintf(USTR("ERROR: curl setup error %d\n\n"), eCode);
+		return false;
+	}
+	eCode = curl_easy_setopt(pCurl, CURLOPT_POSTFIELDS, sPostFields.c_str());
+	if (eCode != CURLE_OK)
+	{
+		UPrintf(USTR("ERROR: curl setup error %d\n\n"), eCode);
+		return false;
+	}
+	eCode = curl_easy_perform(pCurl);
+	if (eCode != CURLE_OK)
+	{
+		UPrintf(USTR("ERROR: curl perform error %d\n\n"), eCode);
+		return false;
+	}
+	long nStatusCode = 0;
+	eCode = curl_easy_getinfo(pCurl, CURLINFO_RESPONSE_CODE, &nStatusCode);
+	string sResponse = curlHolder.GetData();
+	if (m_bVerbose)
+	{
+		UPrintf(USTR("INFO: response\n%") PRIUS USTR("\n"), U8ToU(sResponse).c_str());
+	}
+	if (eCode != CURLE_OK || (nStatusCode != 201))
+	{
+		UPrintf(USTR("ERROR: create empty file error %d code %ld\n\n"), eCode, nStatusCode);
+		return false;
+	}
+	return true;
+}
+
+bool CGithub::FileExist(const string& a_sPath) const
+{
+	if (m_bVerbose)
+	{
+		UPrintf(USTR("INFO: get file %") PRIUS USTR(" in repo %") PRIUS USTR("\n"), U8ToU(a_sPath).c_str(), U8ToU(m_sWorkspace + "/" + m_sRepoName).c_str());
+	}
+	CCurlHolder curlHolder;
+	CURL* pCurl = curlHolder.GetCurl();
+	if (pCurl == nullptr)
+	{
+		UPrintf(USTR("ERROR: curl init error\n\n"));
+		return false;
+	}
+	curlHolder.SetUserPassword(m_sUser + ":" + m_sPersonalAccessToken);
+	curlHolder.HeaderAppend("User-Agent: curl");
+	curlHolder.HeaderAppend("Accept: application/vnd.github.v3+json");
+	curlHolder.SetUrl("https://api.github.com/repos/" + m_sWorkspace + "/" + m_sRepoName + "/contents/" + a_sPath);
+	CURLcode eCode = curl_easy_setopt(pCurl, CURLOPT_HTTPHEADER, curlHolder.GetHeader());
+	if (eCode != CURLE_OK)
+	{
+		UPrintf(USTR("ERROR: curl setup error %d\n\n"), eCode);
+		return false;
+	}
+	eCode = curl_easy_perform(pCurl);
+	if (eCode != CURLE_OK)
+	{
+		UPrintf(USTR("ERROR: curl perform error %d\n\n"), eCode);
+		return false;
+	}
+	long nStatusCode = 0;
+	eCode = curl_easy_getinfo(pCurl, CURLINFO_RESPONSE_CODE, &nStatusCode);
+	string sResponse = curlHolder.GetData();
+	if (m_bVerbose)
+	{
+		UPrintf(USTR("INFO: response\n%") PRIUS USTR("\n"), U8ToU(sResponse).c_str());
+	}
+	if (eCode != CURLE_OK || (nStatusCode != 200))
+	{
+		UPrintf(USTR("ERROR: get file error %d code %ld\n\n"), eCode, nStatusCode);
 		return false;
 	}
 	return true;

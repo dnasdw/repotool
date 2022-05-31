@@ -36,11 +36,14 @@ public:
 	void SetWorkspace(const UString& a_sWorkspace);
 	void SetUser(const UString& a_sUser);
 	void SetUpdateImport(bool a_bUpdateImport);
+	void SetImportParam(const string& a_sImportParam);
+	void SetImportKey(const string& a_sImportKey);
 	void SetVerbose(bool a_bVerbose);
 	bool Unpack();
 	bool Pack();
 	bool Upload();
 	bool Download();
+	bool Import();
 	static const n32 s_nHashCountMax = 10000;
 	static const n32 s_nRepoFileSizeMax = 1024 * 1024;
 	static const n64 s_nRepoSizeMax = 512 * 1024 * 1024;
@@ -63,7 +66,18 @@ public:
 	static const string s_sRemoteInitGitRemoteAdd;
 	static const string s_sRemoteInitImporting;
 	static const string s_sRemoteInitImportingComplete;
+	static const string s_sImportParamFromType;
+	static const string s_sImportParamFromWorkspace;
+	static const string s_sImportParamFromRepoName;
+	static const string s_sImportParamFromUser;
+	static const string s_sImportParamFromPassword;
+	static const string s_sImportParamToType;
+	static const string s_sImportParamToWorkspace;
+	static const string s_sImportParamToRepoName;
+	static const string s_sImportParamToUser;
+	static const string s_sImportParamToPassword;
 private:
+	static string generateImportRecorderFilePath(const string& a_sType, const string& a_sWorkspace, const string& a_sRepoName);
 	bool initDir();
 	bool generateDataDirPath(bool a_bMakeDir);
 	bool generateRepoDirPath(n32 a_nRepoIndex, bool a_bMakeDir);
@@ -71,6 +85,7 @@ private:
 	bool writeTextFile(const UString& a_sPath, const string& a_sText) const;
 	bool readTextFile(const UString& a_sPath, string& a_sText) const;
 	bool loadConfig();
+	bool loadGithubImporterSecretConfig();
 	bool loadUser();
 	bool writeIndex() const;
 	bool loadIndex();
@@ -81,14 +96,16 @@ private:
 	bool gitRemoteAdd(const string& a_sRemoteURL) const;
 	bool gitAdd(const string& a_sPath) const;
 	bool gitCommit(const string& a_sCommitMessage) const;
-	bool gitPush() const;
-	bool gitPull(const string& a_sRemoteURL) const;
+	bool gitPush(bool a_bQuiet) const;
+	bool gitPull(const string& a_sRemoteURL, bool a_bQuiet) const;
 	UString m_sInputPath;
 	UString m_sOutputPath;
 	string m_sType;
 	string m_sWorkspace;
 	string m_sUser;
 	bool m_bUpdateImport;
+	string m_sImportParam;
+	string m_sImportKey;
 	bool m_bVerbose;
 	UString m_sSeperator;
 	string m_sRepoName;
@@ -96,6 +113,7 @@ private:
 	string m_sRemoteName;
 	string m_sRepoPushURL;
 	map<string, string> m_mConfig;
+	bool m_bHasGithubImporter;
 	UString m_sRootDirPath;
 	UString m_sCurrentWorkingDirPath;
 	UString m_sIndexFilePath;

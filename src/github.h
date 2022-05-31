@@ -20,12 +20,14 @@ public:
 	void SetRepoName(const string& a_sRepoName);
 	void SetUser(const string& a_sUser);
 	void SetPersonalAccessToken(const string& a_sAppPassword);
-	void SetSourceRemoteURL(const string& a_sSourceRemoteURL);
 	void SetVerbose(bool a_bVerbose);
 	bool CreateRepo() const;
 	bool GetImportStatus();
-	bool StartImportRepo();
+	bool StartImportRepo(const string& a_sSourceRemoteURL);
 	bool PatchImportRepo();
+	bool TriggerWorkflowImport(const string& a_sWorkflowFileName, const string& a_sEncryptedImportParam) const;
+	bool CreateEmptyFile(const string& a_sPath) const;
+	bool FileExist(const string& a_sPath) const;
 	string GetImportStatusString() const;
 	string GetRepoRemoteHttpsURL() const;
 	string GetRepoPushHttpsURL() const;
@@ -34,6 +36,16 @@ public:
 	static const string s_sImportStatusImporting;
 	static const string s_sImportStatusComplete;
 	static const string s_sImportStatusError;
+	static const string s_sConfigKeyImportRecorderWorkspace;
+	static const string s_sConfigKeyImportRecorderRepoName;
+	static const string s_sConfigKeyImportRecorderUser;
+	static const string s_sConfigKeyImportRecorderPersonalAccessToken;
+	static const string s_sConfigKeyImporterWorkspace;
+	static const string s_sConfigKeyImporterRepoName;
+	static const string s_sConfigKeyImporterWorkflowFileName;
+	static const string s_sConfigKeyImporterUser;
+	static const string s_sConfigKeyImporterPersonalAccessToken;
+	static const string s_sConfigKeyImporterImportKey;
 private:
 	bool getRepo() const;
 	bool parseImportResponse(const string& a_sResponse);
@@ -41,7 +53,6 @@ private:
 	string m_sRepoName;
 	string m_sUser;
 	string m_sPersonalAccessToken;
-	string m_sSourceRemoteURL;
 	bool m_bVerbose;
 	string m_sImportStatusString;
 };

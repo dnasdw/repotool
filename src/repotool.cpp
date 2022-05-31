@@ -11,6 +11,7 @@ CRepoTool::SOption CRepoTool::s_Option[] =
 	{ USTR("pack"), 0, USTR("pack input to output") },
 	{ USTR("upload"), USTR('u'), USTR("upload local to remote") },
 	{ USTR("download"), USTR('d'), USTR("download remote to local") },
+	{ USTR("import"), 0, USTR("import repo") },
 	{ USTR("sample"), 0, USTR("show the samples") },
 	{ USTR("help"), USTR('h'), USTR("show this help") },
 	{ nullptr, 0, USTR("\ncommon:") },
@@ -22,6 +23,9 @@ CRepoTool::SOption CRepoTool::s_Option[] =
 	{ USTR("workspace"), 0, USTR("the workspace of the repository") },
 	{ USTR("user"), 0, USTR("the user for the repository") },
 	{ USTR("update-import"), 0, USTR("force update import if not complete") },
+	{ nullptr, 0, USTR("\nimport:") },
+	{ USTR("import-param"), 0, USTR("[0-9A-Fa-f]*\n\t\thex encrypted param for import action") },
+	{ USTR("import-key"), 0, USTR("[\\x21-\\x7E]*\n\t\tkey for decrypt import param") },
 	{ nullptr, 0, nullptr }
 };
 
@@ -103,14 +107,14 @@ int CRepoTool::ParseOptions(int a_nArgc, UChar* a_pArgv[])
 	return 0;
 }
 
-int CRepoTool::CheckOptions()
+int CRepoTool::CheckOptions() const
 {
 	if (m_eAction == kActionNone)
 	{
 		UPrintf(USTR("ERROR: nothing to do\n\n"));
 		return 1;
 	}
-	if (m_eAction != kActionSample && m_eAction != kActionHelp)
+	if (m_eAction == kActionUnpack || m_eAction == kActionPack || m_eAction == kActionUpload || m_eAction == kActionDownload)
 	{
 		if (m_sInputPath.empty())
 		{
@@ -139,10 +143,23 @@ int CRepoTool::CheckOptions()
 			return 1;
 		}
 	}
+	if (m_eAction == kActionImport)
+	{
+		if (m_sImportParam.empty())
+		{
+			UPrintf(USTR("ERROR: no --import-param option\n\n"));
+			return 1;
+		}
+		if (m_sImportKey.empty())
+		{
+			UPrintf(USTR("ERROR: no --import-key option\n\n"));
+			return 1;
+		}
+	}
 	return 0;
 }
 
-int CRepoTool::Help()
+int CRepoTool::Help() const
 {
 	UPrintf(USTR("repotool %") PRIUS USTR(" by dnasdw\n\n"), AToU(REPOTOOL_VERSION).c_str());
 	UPrintf(USTR("usage: repotool [option...] [option]...\n\n"));
@@ -177,7 +194,7 @@ int CRepoTool::Help()
 	return 0;
 }
 
-int CRepoTool::Action()
+int CRepoTool::Action() const
 {
 	if (m_eAction == kActionUnpack)
 	{
@@ -208,6 +225,14 @@ int CRepoTool::Action()
 		if (!download())
 		{
 			UPrintf(USTR("ERROR: download failed\n\n"));
+			return 1;
+		}
+	}
+	if (m_eAction == kActionImport)
+	{
+		if (!import())
+		{
+			UPrintf(USTR("ERROR: import failed\n\n"));
 			return 1;
 		}
 	}
@@ -264,6 +289,17 @@ CRepoTool::EParseOptionReturn CRepoTool::parseOptions(const UChar* a_pName, int&
 			m_eAction = kActionDownload;
 		}
 		else if (m_eAction != kActionDownload && m_eAction != kActionHelp)
+		{
+			return kParseOptionReturnOptionConflict;
+		}
+	}
+	else if (UCscmp(a_pName, USTR("import")) == 0)
+	{
+		if (m_eAction == kActionNone)
+		{
+			m_eAction = kActionImport;
+		}
+		else if (m_eAction != kActionImport && m_eAction != kActionHelp)
 		{
 			return kParseOptionReturnOptionConflict;
 		}
@@ -341,6 +377,36 @@ CRepoTool::EParseOptionReturn CRepoTool::parseOptions(const UChar* a_pName, int&
 	{
 		m_bUpdateImport = true;
 	}
+	else if (UCscmp(a_pName, USTR("import-param")) == 0)
+	{
+		if (a_nIndex + 1 >= a_nArgc)
+		{
+			return kParseOptionReturnNoArgument;
+		}
+		string sImportParam = UToU8(a_pArgv[++a_nIndex]);
+		static regex c_rParam("[0-9A-Fa-f]*", regex_constants::ECMAScript | regex_constants::icase);
+		if (!regex_match(sImportParam, c_rParam) || sImportParam.size() % 2 != 0)
+		{
+			m_sMessage = U8ToU(sImportParam);
+			return kParseOptionReturnUnknownArgument;
+		}
+		m_sImportParam = sImportParam;
+	}
+	else if (UCscmp(a_pName, USTR("import-key")) == 0)
+	{
+		if (a_nIndex + 1 >= a_nArgc)
+		{
+			return kParseOptionReturnNoArgument;
+		}
+		string sImportKey = UToU8(a_pArgv[++a_nIndex]);
+		static regex c_rKey("[\x21-\x7E]*", regex_constants::ECMAScript | regex_constants::icase);
+		if (!regex_match(sImportKey, c_rKey))
+		{
+			m_sMessage = U8ToU(sImportKey);
+			return kParseOptionReturnUnknownArgument;
+		}
+		m_sImportKey = sImportKey;
+	}
 	return kParseOptionReturnSuccess;
 }
 
@@ -356,7 +422,7 @@ CRepoTool::EParseOptionReturn CRepoTool::parseOptions(int a_nKey, int& a_nIndex,
 	return kParseOptionReturnIllegalOption;
 }
 
-bool CRepoTool::unpack()
+bool CRepoTool::unpack() const
 {
 	CRepo repo;
 	repo.SetInputPath(m_sInputPath);
@@ -366,7 +432,7 @@ bool CRepoTool::unpack()
 	return bResult;
 }
 
-bool CRepoTool::pack()
+bool CRepoTool::pack() const
 {
 	CRepo repo;
 	repo.SetInputPath(m_sInputPath);
@@ -376,7 +442,7 @@ bool CRepoTool::pack()
 	return bResult;
 }
 
-bool CRepoTool::upload()
+bool CRepoTool::upload() const
 {
 	bool bInitialized = CCurlGlobalHolder::Initialize();
 	if (!bInitialized)
@@ -403,7 +469,7 @@ bool CRepoTool::upload()
 	return bResult;
 }
 
-bool CRepoTool::download()
+bool CRepoTool::download() const
 {
 	CRepo repo;
 	repo.SetInputPath(m_sInputPath);
@@ -422,7 +488,24 @@ bool CRepoTool::download()
 	return bResult;
 }
 
-int CRepoTool::sample()
+bool CRepoTool::import() const
+{
+	bool bInitialized = CCurlGlobalHolder::Initialize();
+	if (!bInitialized)
+	{
+		UPrintf(USTR("ERROR: curl initialize failed\n\n"));
+		return false;
+	}
+	CRepo repo;
+	repo.SetImportParam(m_sImportParam);
+	repo.SetImportKey(m_sImportKey);
+	repo.SetVerbose(m_bVerbose);
+	bool bResult = repo.Import();
+	CCurlGlobalHolder::Finalize();
+	return bResult;
+}
+
+int CRepoTool::sample() const
 {
 	UPrintf(USTR("sample:\n"));
 	UPrintf(USTR("# unpack file(s)\n"));
