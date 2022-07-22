@@ -22,6 +22,7 @@ public:
 		kActionUpload,
 		kActionDownload,
 		kActionImport,
+		kActionRemove,
 		kActionSample,
 		kActionHelp
 	};
@@ -46,6 +47,7 @@ private:
 	bool upload() const;
 	bool download() const;
 	bool import() const;
+	bool remove() const;
 	int sample() const;
 	EAction m_eAction;
 	UString m_sInputPath;

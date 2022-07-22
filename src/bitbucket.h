@@ -24,6 +24,7 @@ public:
 	void SetProjectKey(const string& a_sProjectKey);
 	void SetVerbose(bool a_bVerbose);
 	bool CreateRepo();
+	bool DeleteRepo() const;
 	string GetRepoRemoteHttpsURL() const;
 	string GetRepoPushHttpsURL() const;
 	n32 GetAddDataFileSizeMaxCountPerCommit() const;

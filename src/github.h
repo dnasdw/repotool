@@ -22,6 +22,7 @@ public:
 	void SetPersonalAccessToken(const string& a_sAppPassword);
 	void SetVerbose(bool a_bVerbose);
 	bool CreateRepo() const;
+	bool DeleteRepo() const;
 	bool GetImportStatus();
 	bool StartImportRepo(const string& a_sSourceRemoteURL);
 	bool PatchImportRepo();

@@ -1850,6 +1850,223 @@ bool CRepo::Import()
 	return true;
 }
 
+bool CRepo::Remove()
+{
+	if (!initDir())
+	{
+		return false;
+	}
+	string sUserBackup = m_sUser;
+	if (!loadIndex())
+	{
+		return false;
+	}
+	if (!StartWith(m_sInputPath, USTR("/")))
+	{
+		m_sInputPath = USTR("/") + m_sInputPath;
+	}
+	m_sInputPath = Replace(m_sInputPath, USTR("\\"), USTR("/"));
+	if (EndWith(m_sInputPath, USTR("/")))
+	{
+		m_sInputPath.erase(m_sInputPath.size() - 1);
+	}
+	string sInputPath = UToU8(m_sInputPath);
+	map<string, string>::const_iterator itPathHash = m_mPathHash.find(sInputPath);
+	if (itPathHash == m_mPathHash.end())
+	{
+		UPrintf(USTR("ERROR: %") PRIUS USTR(" does not exists\n\n"), m_sInputPath.c_str());
+		return false;
+	}
+	m_sHash = itPathHash->second;
+	if (!generateDataDirPath(false))
+	{
+		return false;
+	}
+	string sRemote;
+	if (!readTextFile(m_sDataRemoteFilePath, sRemote))
+	{
+		return false;
+	}
+	sRemote = Replace(sRemote, "\r\n", "\n");
+	vector<pair<string, string>> vTypeWorkspace;
+	vector<string> vRemote = SplitOf(sRemote, "\r\n");
+	for (vector<string>::const_iterator it = vRemote.begin(); it != vRemote.end(); ++it)
+	{
+		const string& sLine = *it;
+		if (sLine.empty())
+		{
+			continue;
+		}
+		vector<string> vLine = Split(sLine, "\t");
+		if (vLine.size() != 2)
+		{
+			UPrintf(USTR("ERROR: parse remote %") PRIUS USTR(" failed\n\n"), U8ToU(sLine).c_str());
+			return false;
+		}
+		const string& sType = vLine[0];
+		const string& sWorkspace = vLine[1];
+		if (!m_sType.empty())
+		{
+			if (!m_sWorkspace.empty())
+			{
+				if (sType == m_sType && sWorkspace == m_sWorkspace)
+				{
+					vTypeWorkspace.push_back(make_pair(sType, sWorkspace));
+				}
+			}
+			else
+			{
+				if (sType == m_sType)
+				{
+					vTypeWorkspace.push_back(make_pair(sType, sWorkspace));
+				}
+			}
+		}
+		else
+		{
+			if (!m_sWorkspace.empty())
+			{
+				if (sWorkspace == m_sWorkspace)
+				{
+					vTypeWorkspace.push_back(make_pair(sType, sWorkspace));
+				}
+			}
+			else
+			{
+				vTypeWorkspace.push_back(make_pair(sType, sWorkspace));
+			}
+		}
+	}
+	string sDataIndex;
+	if (!readTextFile(m_sDataIndexFilePath, sDataIndex))
+	{
+		return false;
+	}
+	vector<string> vIndex = SplitOf(sDataIndex, "\r\n");
+	n32 nRepoCount = 0;
+	for (vector<string>::const_reverse_iterator it = vIndex.rbegin(); it != vIndex.rend(); ++it)
+	{
+		const string& sLine = *it;
+		if (sLine.empty())
+		{
+			continue;
+		}
+		SPath path;
+		if (!path.Parse(sLine))
+		{
+			UPrintf(USTR("ERROR: parse index %") PRIUS USTR(" failed\n\n"), U8ToU(sLine).c_str());
+			return false;
+		}
+		n64 nFileSize = path.Size;
+		n64 nRepoSize = path.RepoDataV1.RepoSize;
+		n32 nRepoIndex = path.RepoDataV1.RepoIndex;
+		n32 nRepoIndex2 = path.RepoDataV1.RepoIndex2;
+		while (nFileSize > 0)
+		{
+			if (nRepoSize >= s_nRepoSizeMax)
+			{
+				nRepoSize = 0;
+				nRepoIndex++;
+				nRepoIndex2 = 0;
+			}
+			n64 nSize = nFileSize > s_nRepoFileSizeMax ? s_nRepoFileSizeMax : nFileSize;
+			nFileSize -= nSize;
+			nRepoSize += nSize;
+			nRepoIndex2++;
+		}
+		nRepoCount = nRepoIndex + 1;
+		break;
+	}
+	bool bAllComplete = true;
+	for (vector<pair<string, string>>::const_iterator itTypeWorkspace = vTypeWorkspace.begin(); itTypeWorkspace != vTypeWorkspace.end(); ++itTypeWorkspace)
+	{
+		m_sType = itTypeWorkspace->first;
+		m_sWorkspace = itTypeWorkspace->second;
+		m_sUser = sUserBackup;
+		if (m_sUser.empty())
+		{
+			m_sUser = m_sWorkspace;
+		}
+		if (!loadUser())
+		{
+			return false;
+		}
+		bool bOneComplete = true;
+		for (n32 nRepoIndex = 0; nRepoIndex < nRepoCount; nRepoIndex++)
+		{
+			if (!generateRepoDirPath(nRepoIndex, false))
+			{
+				return false;
+			}
+			if (m_sType == CBitbucket::s_sTypeName)
+			{
+				CBitbucket bitbucket;
+				bitbucket.SetWorkspace(m_sWorkspace);
+				bitbucket.SetRepoName(m_sRepoName);
+				bitbucket.SetUser(m_sUser);
+				bitbucket.SetAppPassword(m_sPassword);
+				bitbucket.SetVerbose(m_bVerbose);
+				bool bResult = bitbucket.DeleteRepo();
+				if (!bResult)
+				{
+					bOneComplete = false;
+				}
+			}
+			else if (m_sType == CGithub::s_sTypeName)
+			{
+				CGithub github;
+				github.SetWorkspace(m_sWorkspace);
+				github.SetRepoName(m_sRepoName);
+				github.SetUser(m_sUser);
+				github.SetPersonalAccessToken(m_sPassword);
+				github.SetVerbose(m_bVerbose);
+				bool bResult = github.DeleteRepo();
+				if (!bResult)
+				{
+					bOneComplete = false;
+				}
+			}
+		}
+		if (!bOneComplete)
+		{
+			bAllComplete = false;
+		}
+		else
+		{
+			sRemote = Replace(sRemote, m_sType + "\t" + m_sWorkspace + "\n", "");
+			writeTextFile(m_sDataRemoteFilePath, sRemote);
+		}
+	}
+	if (!bAllComplete)
+	{
+		return false;
+	}
+	string sRemoteTemp = Replace(sRemote, "\n", "");
+	if (!sRemoteTemp.empty())
+	{
+		return true;
+	}
+	for (n32 nRepoIndex = 0; nRepoIndex < nRepoCount; nRepoIndex++)
+	{
+		if (!generateRepoDirPath(nRepoIndex, false))
+		{
+			return false;
+		}
+		if (!removeDir(m_sRepoDirPath))
+		{
+			return false;
+		}
+	}
+	if (!removeDir(m_sDataDirPath))
+	{
+		return false;
+	}
+	m_mPathHash.erase(sInputPath);
+	m_mHashPath.erase(m_sHash);
+	bool bResult = writeIndex();
+	return bResult;
+}
+
 string CRepo::generateImportRecorderFilePath(const string& a_sType, const string& a_sWorkspace, const string& a_sRepoName)
 {
 	string sImportRecorderFilePath = "data/" + a_sType + "/" + a_sWorkspace + "/" + a_sRepoName + ".txt";
@@ -2517,6 +2734,22 @@ bool CRepo::gitPull(const string& a_sRemoteURL, bool a_bQuiet) const
 	if (nResult != 0)
 	{
 		UPrintf(USTR("ERROR: git pull %") PRIUS USTR(" master failed\n\n"), U8ToU(a_sRemoteURL).c_str());
+		return false;
+	}
+	return true;
+}
+
+bool CRepo::removeDir(const UString& a_sDirPath) const
+{
+	n32 nResult = 0;
+#if SDW_PLATFORM == SDW_PLATFORM_WINDOWS
+	nResult = _wsystem((L"RD /S /Q \"" + a_sDirPath + L"\"").c_str());
+#else
+	nResult = system(("rm -rf \"" + a_sDirPath + "\"").c_str());
+#endif
+	if (nResult != 0)
+	{
+		UPrintf(USTR("ERROR: remove dir %") PRIUS USTR(" failed\n\n"), a_sDirPath.c_str());
 		return false;
 	}
 	return true;

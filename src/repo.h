@@ -44,6 +44,7 @@ public:
 	bool Upload();
 	bool Download();
 	bool Import();
+	bool Remove();
 	static const n32 s_nHashCountMax = 10000;
 	static const n32 s_nRepoFileSizeMax = 1024 * 1024;
 	static const n64 s_nRepoSizeMax = 512 * 1024 * 1024;
@@ -98,6 +99,7 @@ private:
 	bool gitCommit(const string& a_sCommitMessage) const;
 	bool gitPush(bool a_bQuiet) const;
 	bool gitPull(const string& a_sRemoteURL, bool a_bQuiet) const;
+	bool removeDir(const UString& a_sDirPath) const;
 	UString m_sInputPath;
 	UString m_sOutputPath;
 	string m_sType;

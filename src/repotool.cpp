@@ -12,16 +12,17 @@ CRepoTool::SOption CRepoTool::s_Option[] =
 	{ USTR("upload"), USTR('u'), USTR("upload local to remote") },
 	{ USTR("download"), USTR('d'), USTR("download remote to local") },
 	{ USTR("import"), 0, USTR("import repo") },
+	{ USTR("remove"), 0, USTR("remove repo") },
 	{ USTR("sample"), 0, USTR("show the samples") },
 	{ USTR("help"), USTR('h'), USTR("show this help") },
 	{ nullptr, 0, USTR("\ncommon:") },
 	{ USTR("input"), USTR('i'), USTR("the input") },
 	{ USTR("output"), USTR('o'), USTR("the output") },
 	{ USTR("verbose"), USTR('v'), USTR("show the info") },
-	{ nullptr, 0, USTR("\nupload:") },
 	{ USTR("type"), USTR('t'), USTR("[bitbucket|github]\n\t\tthe repository type") },
 	{ USTR("workspace"), 0, USTR("the workspace of the repository") },
 	{ USTR("user"), 0, USTR("the user for the repository") },
+	{ nullptr, 0, USTR("\nupload:") },
 	{ USTR("update-import"), 0, USTR("force update import if not complete") },
 	{ nullptr, 0, USTR("\nimport:") },
 	{ USTR("import-param"), 0, USTR("[0-9A-Fa-f]*\n\t\thex encrypted param for import action") },
@@ -114,7 +115,7 @@ int CRepoTool::CheckOptions() const
 		UPrintf(USTR("ERROR: nothing to do\n\n"));
 		return 1;
 	}
-	if (m_eAction == kActionUnpack || m_eAction == kActionPack || m_eAction == kActionUpload || m_eAction == kActionDownload)
+	if (m_eAction == kActionUnpack || m_eAction == kActionPack || m_eAction == kActionUpload || m_eAction == kActionDownload || m_eAction == kActionRemove)
 	{
 		if (m_sInputPath.empty())
 		{
@@ -236,6 +237,14 @@ int CRepoTool::Action() const
 			return 1;
 		}
 	}
+	if (m_eAction == kActionRemove)
+	{
+		if (!remove())
+		{
+			UPrintf(USTR("ERROR: remove failed\n\n"));
+			return 1;
+		}
+	}
 	if (m_eAction == kActionSample)
 	{
 		return sample();
@@ -300,6 +309,17 @@ CRepoTool::EParseOptionReturn CRepoTool::parseOptions(const UChar* a_pName, int&
 			m_eAction = kActionImport;
 		}
 		else if (m_eAction != kActionImport && m_eAction != kActionHelp)
+		{
+			return kParseOptionReturnOptionConflict;
+		}
+	}
+	else if (UCscmp(a_pName, USTR("remove")) == 0)
+	{
+		if (m_eAction == kActionNone)
+		{
+			m_eAction = kActionRemove;
+		}
+		else if (m_eAction != kActionRemove && m_eAction != kActionHelp)
 		{
 			return kParseOptionReturnOptionConflict;
 		}
@@ -505,6 +525,32 @@ bool CRepoTool::import() const
 	return bResult;
 }
 
+bool CRepoTool::remove() const
+{
+	bool bInitialized = CCurlGlobalHolder::Initialize();
+	if (!bInitialized)
+	{
+		UPrintf(USTR("ERROR: curl initialize failed\n\n"));
+		return false;
+	}
+	CRepo repo;
+	repo.SetInputPath(m_sInputPath);
+	repo.SetType(m_sType);
+	if (!m_sWorkspace.empty())
+	{
+		repo.SetWorkspace(m_sWorkspace);
+	}
+	else
+	{
+		repo.SetWorkspace(m_sUser);
+	}
+	repo.SetUser(m_sUser);
+	repo.SetVerbose(m_bVerbose);
+	bool bResult = repo.Remove();
+	CCurlGlobalHolder::Finalize();
+	return bResult;
+}
+
 int CRepoTool::sample() const
 {
 	UPrintf(USTR("sample:\n"));
@@ -516,6 +562,8 @@ int CRepoTool::sample() const
 	UPrintf(USTR("repotool -v --upload -i \"/github/upload\" -t bitbucket --user someone\n\n"));
 	UPrintf(USTR("# download file(s)\n"));
 	UPrintf(USTR("repotool -v --download -i \"/github/upload\"\n\n"));
+	UPrintf(USTR("# remove file(s)\n"));
+	UPrintf(USTR("repotool -v --remove -i \"/github/upload\"\n\n"));
 	return 0;
 }
 
