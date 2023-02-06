@@ -81,6 +81,7 @@ private:
 	static string generateImportRecorderFilePath(const string& a_sType, const string& a_sWorkspace, const string& a_sRepoName);
 	bool initDir();
 	bool generateDataDirPath(bool a_bMakeDir);
+	void generateRepoName(n32 a_nRepoIndex);
 	bool generateRepoDirPath(n32 a_nRepoIndex, bool a_bMakeDir);
 	bool generateRepoDataFilePath(n32 a_nRepoIndex2, bool a_bMakeDir);
 	bool writeTextFile(const UString& a_sPath, const string& a_sText) const;

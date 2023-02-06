@@ -867,6 +867,70 @@ bool CRepo::Upload()
 		const string& sWorkspace = vLine[1];
 		if (sType == m_sType && sWorkspace == m_sWorkspace)
 		{
+			if (CGithub::s_bImportNeedDisableActions)
+			{
+				if (m_sType == CGithub::s_sTypeName)
+				{
+					string sDataIndex;
+					if (!readTextFile(m_sDataIndexFilePath, sDataIndex))
+					{
+						return false;
+					}
+					vector<string> vIndex = SplitOf(sDataIndex, "\r\n");
+					n32 nRepoCount = 0;
+					for (vector<string>::const_reverse_iterator it = vIndex.rbegin(); it != vIndex.rend(); ++it)
+					{
+						const string& sLine = *it;
+						if (sLine.empty())
+						{
+							continue;
+						}
+						SPath path;
+						if (!path.Parse(sLine))
+						{
+							UPrintf(USTR("ERROR: parse index %") PRIUS USTR(" failed\n\n"), U8ToU(sLine).c_str());
+							return false;
+						}
+						n64 nFileSize = path.Size;
+						n64 nRepoSize = path.RepoDataV1.RepoSize;
+						n32 nRepoIndex = path.RepoDataV1.RepoIndex;
+						n32 nRepoIndex2 = path.RepoDataV1.RepoIndex2;
+						while (nFileSize > 0)
+						{
+							if (nRepoSize >= s_nRepoSizeMax)
+							{
+								nRepoSize = 0;
+								nRepoIndex++;
+								nRepoIndex2 = 0;
+							}
+							n64 nSize = nFileSize > s_nRepoFileSizeMax ? s_nRepoFileSizeMax : nFileSize;
+							nFileSize -= nSize;
+							nRepoSize += nSize;
+							nRepoIndex2++;
+						}
+						nRepoCount = nRepoIndex + 1;
+						break;
+					}
+					bool bAllComplete = true;
+					for (n32 nRepoIndex = 0; nRepoIndex < nRepoCount; nRepoIndex++)
+					{
+						generateRepoName(nRepoIndex);
+						CGithub github;
+						github.SetWorkspace(m_sWorkspace);
+						github.SetRepoName(m_sRepoName);
+						github.SetUser(m_sUser);
+						github.SetPersonalAccessToken(m_sPassword);
+						github.SetVerbose(m_bVerbose);
+						bool bSetResult = github.SetActionsPermissions(true);
+						if (!bSetResult)
+						{
+							bAllComplete = false;
+							continue;
+						}
+					}
+					return bAllComplete;
+				}
+			}
 			return true;
 		}
 		vTypeWorkspace.push_back(make_pair(sType, sWorkspace));
@@ -948,6 +1012,23 @@ bool CRepo::Upload()
 		}
 		if (sRemoteInit.find(s_sRemoteInitImportingComplete) != sRemoteInit.end())
 		{
+			if (CGithub::s_bImportNeedDisableActions)
+			{
+				if (m_sType == CGithub::s_sTypeName)
+				{
+					CGithub github;
+					github.SetWorkspace(m_sWorkspace);
+					github.SetRepoName(m_sRepoName);
+					github.SetUser(m_sUser);
+					github.SetPersonalAccessToken(m_sPassword);
+					github.SetVerbose(m_bVerbose);
+					bool bSetResult = github.SetActionsPermissions(true);
+					if (!bSetResult)
+					{
+						bAllComplete = false;
+					}
+				}
+			}
 			continue;
 		}
 		if (sRemoteInit.find(s_sRemoteInitImporting) != sRemoteInit.end())
@@ -977,6 +1058,14 @@ bool CRepo::Upload()
 									sRemoteInit.insert(s_sRemoteInitImportingComplete);
 									sRemoteTemp += s_sRemoteInitImportingComplete + "\n";
 									writeTextFile(sRemoteTempFilePath, sRemoteTemp);
+									if (CGithub::s_bImportNeedDisableActions)
+									{
+										bool bSetResult = github.SetActionsPermissions(true);
+										if (!bSetResult)
+										{
+											bAllComplete = false;
+										}
+									}
 								}
 								else
 								{
@@ -994,6 +1083,14 @@ bool CRepo::Upload()
 						sRemoteInit.insert(s_sRemoteInitImportingComplete);
 						sRemoteTemp += s_sRemoteInitImportingComplete + "\n";
 						writeTextFile(sRemoteTempFilePath, sRemoteTemp);
+						if (CGithub::s_bImportNeedDisableActions)
+						{
+							bool bSetResult = github.SetActionsPermissions(true);
+							if (!bSetResult)
+							{
+								bAllComplete = false;
+							}
+						}
 					}
 					else if (sImportStatusString == CGithub::s_sImportStatusError)
 					{
@@ -1006,6 +1103,14 @@ bool CRepo::Upload()
 								sRemoteInit.insert(s_sRemoteInitImportingComplete);
 								sRemoteTemp += s_sRemoteInitImportingComplete + "\n";
 								writeTextFile(sRemoteTempFilePath, sRemoteTemp);
+								if (CGithub::s_bImportNeedDisableActions)
+								{
+									bool bSetResult = github.SetActionsPermissions(true);
+									if (!bSetResult)
+									{
+										bAllComplete = false;
+									}
+								}
 							}
 							else
 							{
@@ -1195,6 +1300,14 @@ bool CRepo::Upload()
 						sRemoteInit.insert(s_sRemoteInitImportingComplete);
 						sRemoteTemp += s_sRemoteInitImportingComplete + "\n";
 						writeTextFile(sRemoteTempFilePath, sRemoteTemp);
+						if (CGithub::s_bImportNeedDisableActions)
+						{
+							bool bSetResult = github.SetActionsPermissions(true);
+							if (!bSetResult)
+							{
+								bAllComplete = false;
+							}
+						}
 					}
 					else if (sImportStatusString == CGithub::s_sImportStatusError)
 					{
@@ -2108,9 +2221,14 @@ bool CRepo::generateDataDirPath(bool a_bMakeDir)
 	return true;
 }
 
-bool CRepo::generateRepoDirPath(n32 a_nRepoIndex, bool a_bMakeDir)
+void CRepo::generateRepoName(n32 a_nRepoIndex)
 {
 	m_sRepoName = Format("%s%08d", m_sHash.c_str(), a_nRepoIndex);
+}
+
+bool CRepo::generateRepoDirPath(n32 a_nRepoIndex, bool a_bMakeDir)
+{
+	generateRepoName(a_nRepoIndex);
 	m_sRepoDirPath = m_sRootDirPath + USTR("/") + s_sRepoDirName + USTR("/") + U8ToU(m_sRepoName);
 	if (a_bMakeDir)
 	{

@@ -17,6 +17,7 @@ const string CGithub::s_sConfigKeyImporterWorkflowFileName = "github.importer.wo
 const string CGithub::s_sConfigKeyImporterUser = "github.importer.user";
 const string CGithub::s_sConfigKeyImporterPersonalAccessToken = "github.importer.personal_access_token";
 const string CGithub::s_sConfigKeyImporterImportKey = "github.importer.import.key";
+const bool CGithub::s_bImportNeedDisableActions = true;
 
 bool SGithubUser::Parse(const vector<string>& a_vLine)
 {
@@ -96,6 +97,9 @@ bool CGithub::CreateRepo() const
 	curlHolder.SetUserPassword(m_sUser + ":" + m_sPersonalAccessToken);
 	curlHolder.HeaderAppend("User-Agent: curl");
 	curlHolder.HeaderAppend("Accept: application/vnd.github.v3+json");
+	//curlHolder.HeaderAppend("Accept: application/vnd.github+json");
+	//curlHolder.HeaderAppend("Authorization: Bearer " + m_sPersonalAccessToken);
+	//curlHolder.HeaderAppend("X-GitHub-Api-Version: 2022-11-28");
 	string sPostFields = "{\"name\": \"" + m_sRepoName + "\", \"private\": false}";
 	if (bOrg)
 	{
@@ -165,6 +169,9 @@ bool CGithub::DeleteRepo() const
 	curlHolder.SetUserPassword(m_sUser + ":" + m_sPersonalAccessToken);
 	curlHolder.HeaderAppend("User-Agent: curl");
 	curlHolder.HeaderAppend("Accept: application/vnd.github.v3+json");
+	//curlHolder.HeaderAppend("Accept: application/vnd.github+json");
+	//curlHolder.HeaderAppend("Authorization: Bearer " + m_sPersonalAccessToken);
+	//curlHolder.HeaderAppend("X-GitHub-Api-Version: 2022-11-28");
 	curlHolder.SetUrl("https://api.github.com/repos/" + m_sWorkspace + "/" + m_sRepoName);
 	if (curlHolder.IsError())
 	{
@@ -204,6 +211,84 @@ bool CGithub::DeleteRepo() const
 	return true;
 }
 
+bool CGithub::SetActionsPermissions(bool a_bEnabled) const
+{
+	bool bEnabled = false;
+	if (!getActionsPermissions(bEnabled))
+	{
+		return false;
+	}
+	if (a_bEnabled == bEnabled)
+	{
+		return true;
+	}
+	if (m_bVerbose)
+	{
+		UPrintf(USTR("INFO: set actions permissions for repo %") PRIUS USTR("\n"), U8ToU(m_sWorkspace + "/" + m_sRepoName).c_str());
+	}
+	CCurlHolder curlHolder;
+	CURL* pCurl = curlHolder.GetCurl();
+	if (pCurl == nullptr)
+	{
+		UPrintf(USTR("ERROR: curl init error\n\n"));
+		return false;
+	}
+	curlHolder.SetUserPassword(m_sUser + ":" + m_sPersonalAccessToken);
+	curlHolder.HeaderAppend("User-Agent: curl");
+	curlHolder.HeaderAppend("Accept: application/vnd.github.v3+json");
+	//curlHolder.HeaderAppend("Accept: application/vnd.github+json");
+	//curlHolder.HeaderAppend("Authorization: Bearer " + m_sPersonalAccessToken);
+	//curlHolder.HeaderAppend("X-GitHub-Api-Version: 2022-11-28");
+	string sPostFields = "{\"enabled\": false}";
+	if (a_bEnabled)
+	{
+		sPostFields = "{\"enabled\": true, \"allowed_actions\": \"all\"}";
+	}
+	curlHolder.SetUrl("https://api.github.com/repos/" + m_sWorkspace + "/" + m_sRepoName + "/actions/permissions");
+	if (curlHolder.IsError())
+	{
+		UPrintf(USTR("ERROR: curl setup error\n\n"));
+		return false;
+	}
+	CURLcode eCode = curl_easy_setopt(pCurl, CURLOPT_CUSTOMREQUEST, "PUT");
+	if (eCode != CURLE_OK)
+	{
+		UPrintf(USTR("ERROR: curl setup error %d\n\n"), eCode);
+		return false;
+	}
+	eCode = curl_easy_setopt(pCurl, CURLOPT_HTTPHEADER, curlHolder.GetHeader());
+	if (eCode != CURLE_OK)
+	{
+		UPrintf(USTR("ERROR: curl setup error %d\n\n"), eCode);
+		return false;
+	}
+	eCode = curl_easy_setopt(pCurl, CURLOPT_POSTFIELDS, sPostFields.c_str());
+	if (eCode != CURLE_OK)
+	{
+		UPrintf(USTR("ERROR: curl setup error %d\n\n"), eCode);
+		return false;
+	}
+	eCode = curl_easy_perform(pCurl);
+	if (eCode != CURLE_OK)
+	{
+		UPrintf(USTR("ERROR: curl perform error %d\n\n"), eCode);
+		return false;
+	}
+	long nStatusCode = 0;
+	eCode = curl_easy_getinfo(pCurl, CURLINFO_RESPONSE_CODE, &nStatusCode);
+	string sResponse = curlHolder.GetData();
+	if (m_bVerbose)
+	{
+		UPrintf(USTR("INFO: response\n%") PRIUS USTR("\n"), U8ToU(sResponse).c_str());
+	}
+	if (eCode != CURLE_OK || nStatusCode != 204)
+	{
+		UPrintf(USTR("ERROR: set actions permissions for repo error %d code %ld\n\n"), eCode, nStatusCode);
+		return false;
+	}
+	return true;
+}
+
 bool CGithub::GetImportStatus()
 {
 	if (m_bVerbose)
@@ -220,6 +305,9 @@ bool CGithub::GetImportStatus()
 	curlHolder.SetUserPassword(m_sUser + ":" + m_sPersonalAccessToken);
 	curlHolder.HeaderAppend("User-Agent: curl");
 	curlHolder.HeaderAppend("Accept: application/vnd.github.v3+json");
+	//curlHolder.HeaderAppend("Accept: application/vnd.github+json");
+	//curlHolder.HeaderAppend("Authorization: Bearer " + m_sPersonalAccessToken);
+	//curlHolder.HeaderAppend("X-GitHub-Api-Version: 2022-11-28");
 	curlHolder.SetUrl("https://api.github.com/repos/" + m_sWorkspace + "/" + m_sRepoName + "/import");
 	if (curlHolder.IsError())
 	{
@@ -263,6 +351,13 @@ bool CGithub::StartImportRepo(const string& a_sSourceRemoteURL)
 	{
 		return true;
 	}
+	if (s_bImportNeedDisableActions)
+	{
+		if (!SetActionsPermissions(false))
+		{
+			return false;
+		}
+	}
 	if (m_bVerbose)
 	{
 		UPrintf(USTR("INFO: start import repo %") PRIUS USTR("\n"), U8ToU(m_sWorkspace + "/" + m_sRepoName).c_str());
@@ -277,6 +372,9 @@ bool CGithub::StartImportRepo(const string& a_sSourceRemoteURL)
 	curlHolder.SetUserPassword(m_sUser + ":" + m_sPersonalAccessToken);
 	curlHolder.HeaderAppend("User-Agent: curl");
 	curlHolder.HeaderAppend("Accept: application/vnd.github.v3+json");
+	//curlHolder.HeaderAppend("Accept: application/vnd.github+json");
+	//curlHolder.HeaderAppend("Authorization: Bearer " + m_sPersonalAccessToken);
+	//curlHolder.HeaderAppend("X-GitHub-Api-Version: 2022-11-28");
 	string sPostFields = "{\"vcs\": \"git\", \"vcs_url\": \"" + a_sSourceRemoteURL + "\"}";
 	curlHolder.SetUrl("https://api.github.com/repos/" + m_sWorkspace + "/" + m_sRepoName + "/import");
 	if (curlHolder.IsError())
@@ -343,6 +441,9 @@ bool CGithub::PatchImportRepo()
 	curlHolder.SetUserPassword(m_sUser + ":" + m_sPersonalAccessToken);
 	curlHolder.HeaderAppend("User-Agent: curl");
 	curlHolder.HeaderAppend("Accept: application/vnd.github.v3+json");
+	//curlHolder.HeaderAppend("Accept: application/vnd.github+json");
+	//curlHolder.HeaderAppend("Authorization: Bearer " + m_sPersonalAccessToken);
+	//curlHolder.HeaderAppend("X-GitHub-Api-Version: 2022-11-28");
 	curlHolder.SetUrl("https://api.github.com/repos/" + m_sWorkspace + "/" + m_sRepoName + "/import");
 	if (curlHolder.IsError())
 	{
@@ -402,6 +503,9 @@ bool CGithub::TriggerWorkflowImport(const string& a_sWorkflowFileName, const str
 	curlHolder.SetUserPassword(m_sUser + ":" + m_sPersonalAccessToken);
 	curlHolder.HeaderAppend("User-Agent: curl");
 	curlHolder.HeaderAppend("Accept: application/vnd.github.v3+json");
+	//curlHolder.HeaderAppend("Accept: application/vnd.github+json");
+	//curlHolder.HeaderAppend("Authorization: Bearer " + m_sPersonalAccessToken);
+	//curlHolder.HeaderAppend("X-GitHub-Api-Version: 2022-11-28");
 	string sPostFields = "{\"ref\": \"master\", \"inputs\": {\"import_param\": \"" + a_sEncryptedImportParam + "\"}}";
 	curlHolder.SetUrl("https://api.github.com/repos/" + m_sWorkspace + "/" + m_sRepoName + "/actions/workflows/" + a_sWorkflowFileName + "/dispatches");
 	if (curlHolder.IsError())
@@ -468,6 +572,9 @@ bool CGithub::CreateEmptyFile(const string& a_sPath) const
 	curlHolder.SetUserPassword(m_sUser + ":" + m_sPersonalAccessToken);
 	curlHolder.HeaderAppend("User-Agent: curl");
 	curlHolder.HeaderAppend("Accept: application/vnd.github.v3+json");
+	//curlHolder.HeaderAppend("Accept: application/vnd.github+json");
+	//curlHolder.HeaderAppend("Authorization: Bearer " + m_sPersonalAccessToken);
+	//curlHolder.HeaderAppend("X-GitHub-Api-Version: 2022-11-28");
 	string sPostFields = "{\"message\": \"" + a_sPath + "\", \"content\": \"\"}";
 	curlHolder.SetUrl("https://api.github.com/repos/" + m_sWorkspace + "/" + m_sRepoName + "/contents/" + a_sPath);
 	CURLcode eCode = curl_easy_setopt(pCurl, CURLOPT_CUSTOMREQUEST, "PUT");
@@ -525,6 +632,9 @@ bool CGithub::FileExist(const string& a_sPath) const
 	curlHolder.SetUserPassword(m_sUser + ":" + m_sPersonalAccessToken);
 	curlHolder.HeaderAppend("User-Agent: curl");
 	curlHolder.HeaderAppend("Accept: application/vnd.github.v3+json");
+	//curlHolder.HeaderAppend("Accept: application/vnd.github+json");
+	//curlHolder.HeaderAppend("Authorization: Bearer " + m_sPersonalAccessToken);
+	//curlHolder.HeaderAppend("X-GitHub-Api-Version: 2022-11-28");
 	curlHolder.SetUrl("https://api.github.com/repos/" + m_sWorkspace + "/" + m_sRepoName + "/contents/" + a_sPath);
 	CURLcode eCode = curl_easy_setopt(pCurl, CURLOPT_HTTPHEADER, curlHolder.GetHeader());
 	if (eCode != CURLE_OK)
@@ -603,6 +713,9 @@ bool CGithub::getRepo() const
 	curlHolder.SetUserPassword(m_sUser + ":" + m_sPersonalAccessToken);
 	curlHolder.HeaderAppend("User-Agent: curl");
 	curlHolder.HeaderAppend("Accept: application/vnd.github.v3+json");
+	//curlHolder.HeaderAppend("Accept: application/vnd.github+json");
+	//curlHolder.HeaderAppend("Authorization: Bearer " + m_sPersonalAccessToken);
+	//curlHolder.HeaderAppend("X-GitHub-Api-Version: 2022-11-28");
 	curlHolder.SetUrl("https://api.github.com/repos/" + m_sWorkspace + "/" + m_sRepoName);
 	if (curlHolder.IsError())
 	{
@@ -633,6 +746,77 @@ bool CGithub::getRepo() const
 		UPrintf(USTR("ERROR: get repo error %d code %ld\n\n"), eCode, nStatusCode);
 		return false;
 	}
+	return true;
+}
+
+bool CGithub::getActionsPermissions(bool& a_bEnabled) const
+{
+	if (m_bVerbose)
+	{
+		UPrintf(USTR("INFO: get actions permissions for repo %") PRIUS USTR("\n"), U8ToU(m_sWorkspace + "/" + m_sRepoName).c_str());
+	}
+	CCurlHolder curlHolder;
+	CURL* pCurl = curlHolder.GetCurl();
+	if (pCurl == nullptr)
+	{
+		UPrintf(USTR("ERROR: curl init error\n\n"));
+		return false;
+	}
+	curlHolder.SetUserPassword(m_sUser + ":" + m_sPersonalAccessToken);
+	curlHolder.HeaderAppend("User-Agent: curl");
+	curlHolder.HeaderAppend("Accept: application/vnd.github.v3+json");
+	//curlHolder.HeaderAppend("Accept: application/vnd.github+json");
+	//curlHolder.HeaderAppend("Authorization: Bearer " + m_sPersonalAccessToken);
+	//curlHolder.HeaderAppend("X-GitHub-Api-Version: 2022-11-28");
+	curlHolder.SetUrl("https://api.github.com/repos/" + m_sWorkspace + "/" + m_sRepoName + "/actions/permissions");
+	if (curlHolder.IsError())
+	{
+		UPrintf(USTR("ERROR: curl setup error\n\n"));
+		return false;
+	}
+	CURLcode eCode = curl_easy_setopt(pCurl, CURLOPT_HTTPHEADER, curlHolder.GetHeader());
+	if (eCode != CURLE_OK)
+	{
+		UPrintf(USTR("ERROR: curl setup error %d\n\n"), eCode);
+		return false;
+	}
+	eCode = curl_easy_perform(pCurl);
+	if (eCode != CURLE_OK)
+	{
+		UPrintf(USTR("ERROR: curl perform error %d\n\n"), eCode);
+		return false;
+	}
+	long nStatusCode = 0;
+	eCode = curl_easy_getinfo(pCurl, CURLINFO_RESPONSE_CODE, &nStatusCode);
+	string sResponse = curlHolder.GetData();
+	if (m_bVerbose)
+	{
+		UPrintf(USTR("INFO: response\n%") PRIUS USTR("\n"), U8ToU(sResponse).c_str());
+	}
+	if (eCode != CURLE_OK || nStatusCode != 200)
+	{
+		UPrintf(USTR("ERROR: get actions permissions for repo error %d code %ld\n\n"), eCode, nStatusCode);
+		return false;
+	}
+	RAPIDJSON_NAMESPACE::Document responseJson;
+	if (responseJson.Parse(sResponse).HasParseError() || !responseJson.IsObject())
+	{
+		UPrintf(USTR("ERROR: parse json response failed\n\n"));
+		return false;
+	}
+	RAPIDJSON_NAMESPACE::Value::ConstMemberIterator itJsonEnabled = responseJson.FindMember("enabled");
+	if (itJsonEnabled == responseJson.MemberEnd())
+	{
+		UPrintf(USTR("ERROR: no enabled in json response\n\n"));
+		return false;
+	}
+	const RAPIDJSON_NAMESPACE::Value& enabled = itJsonEnabled->value;
+	if (!enabled.IsBool())
+	{
+		UPrintf(USTR("ERROR: enabled is not a bool member\n\n"));
+		return false;
+	}
+	a_bEnabled = enabled.GetBool();
 	return true;
 }
 

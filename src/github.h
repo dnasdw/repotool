@@ -23,6 +23,7 @@ public:
 	void SetVerbose(bool a_bVerbose);
 	bool CreateRepo() const;
 	bool DeleteRepo() const;
+	bool SetActionsPermissions(bool a_bEnabled) const;
 	bool GetImportStatus();
 	bool StartImportRepo(const string& a_sSourceRemoteURL);
 	bool PatchImportRepo();
@@ -47,8 +48,10 @@ public:
 	static const string s_sConfigKeyImporterUser;
 	static const string s_sConfigKeyImporterPersonalAccessToken;
 	static const string s_sConfigKeyImporterImportKey;
+	static const bool s_bImportNeedDisableActions;
 private:
 	bool getRepo() const;
+	bool getActionsPermissions(bool& a_bEnabled) const;
 	bool parseImportResponse(const string& a_sResponse);
 	string m_sWorkspace;
 	string m_sRepoName;
