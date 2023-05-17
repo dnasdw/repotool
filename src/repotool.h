@@ -59,6 +59,7 @@ private:
 	bool m_bUpdateImport;
 	string m_sImportParam;
 	string m_sImportKey;
+	bool m_bRemoveLocalRepo;
 	UString m_sMessage;
 };
 

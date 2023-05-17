@@ -54,6 +54,7 @@ bool SRepoIndexData::Parse(const string& a_sLine)
 
 CRepo::CRepo()
 	: m_bUpdateImport(false)
+	, m_bRemoveLocalRepo(false)
 	, m_bVerbose(false)
 	, m_sSeperator(USTR("/"))
 	, m_bHasGithubImporter(false)
@@ -106,6 +107,11 @@ void CRepo::SetImportParam(const string& a_sImportParam)
 void CRepo::SetImportKey(const string& a_sImportKey)
 {
 	m_sImportKey = a_sImportKey;
+}
+
+void CRepo::SetRemoveLocalRepo(bool a_bRemoveLocalRepo)
+{
+	m_bRemoveLocalRepo = a_bRemoveLocalRepo;
 }
 
 void CRepo::SetVerbose(bool a_bVerbose)
@@ -2090,74 +2096,84 @@ bool CRepo::Remove()
 		nRepoCount = nRepoIndex + 1;
 		break;
 	}
-	bool bAllComplete = true;
-	for (vector<pair<string, string>>::const_iterator itTypeWorkspace = vTypeWorkspace.begin(); itTypeWorkspace != vTypeWorkspace.end(); ++itTypeWorkspace)
+	if (m_bRemoveLocalRepo)
 	{
-		m_sType = itTypeWorkspace->first;
-		m_sWorkspace = itTypeWorkspace->second;
-		m_sUser = sUserBackup;
-		if (m_sUser.empty())
-		{
-			m_sUser = m_sWorkspace;
-		}
-		if (!loadUser())
+		if (vTypeWorkspace.empty())
 		{
 			return false;
 		}
-		bool bOneComplete = true;
-		for (n32 nRepoIndex = 0; nRepoIndex < nRepoCount; nRepoIndex++)
+	}
+	else
+	{
+		bool bAllComplete = true;
+		for (vector<pair<string, string>>::const_iterator itTypeWorkspace = vTypeWorkspace.begin(); itTypeWorkspace != vTypeWorkspace.end(); ++itTypeWorkspace)
 		{
-			if (!generateRepoDirPath(nRepoIndex, false))
+			m_sType = itTypeWorkspace->first;
+			m_sWorkspace = itTypeWorkspace->second;
+			m_sUser = sUserBackup;
+			if (m_sUser.empty())
+			{
+				m_sUser = m_sWorkspace;
+			}
+			if (!loadUser())
 			{
 				return false;
 			}
-			if (m_sType == CBitbucket::s_sTypeName)
+			bool bOneComplete = true;
+			for (n32 nRepoIndex = 0; nRepoIndex < nRepoCount; nRepoIndex++)
 			{
-				CBitbucket bitbucket;
-				bitbucket.SetWorkspace(m_sWorkspace);
-				bitbucket.SetRepoName(m_sRepoName);
-				bitbucket.SetUser(m_sUser);
-				bitbucket.SetAppPassword(m_sPassword);
-				bitbucket.SetVerbose(m_bVerbose);
-				bool bResult = bitbucket.DeleteRepo();
-				if (!bResult)
+				if (!generateRepoDirPath(nRepoIndex, false))
 				{
-					bOneComplete = false;
+					return false;
+				}
+				if (m_sType == CBitbucket::s_sTypeName)
+				{
+					CBitbucket bitbucket;
+					bitbucket.SetWorkspace(m_sWorkspace);
+					bitbucket.SetRepoName(m_sRepoName);
+					bitbucket.SetUser(m_sUser);
+					bitbucket.SetAppPassword(m_sPassword);
+					bitbucket.SetVerbose(m_bVerbose);
+					bool bResult = bitbucket.DeleteRepo();
+					if (!bResult)
+					{
+						bOneComplete = false;
+					}
+				}
+				else if (m_sType == CGithub::s_sTypeName)
+				{
+					CGithub github;
+					github.SetWorkspace(m_sWorkspace);
+					github.SetRepoName(m_sRepoName);
+					github.SetUser(m_sUser);
+					github.SetPersonalAccessToken(m_sPassword);
+					github.SetVerbose(m_bVerbose);
+					bool bResult = github.DeleteRepo();
+					if (!bResult)
+					{
+						bOneComplete = false;
+					}
 				}
 			}
-			else if (m_sType == CGithub::s_sTypeName)
+			if (!bOneComplete)
 			{
-				CGithub github;
-				github.SetWorkspace(m_sWorkspace);
-				github.SetRepoName(m_sRepoName);
-				github.SetUser(m_sUser);
-				github.SetPersonalAccessToken(m_sPassword);
-				github.SetVerbose(m_bVerbose);
-				bool bResult = github.DeleteRepo();
-				if (!bResult)
-				{
-					bOneComplete = false;
-				}
+				bAllComplete = false;
+			}
+			else
+			{
+				sRemote = Replace(sRemote, m_sType + "\t" + m_sWorkspace + "\n", "");
+				writeTextFile(m_sDataRemoteFilePath, sRemote);
 			}
 		}
-		if (!bOneComplete)
+		if (!bAllComplete)
 		{
-			bAllComplete = false;
+			return false;
 		}
-		else
+		string sRemoteTemp = Replace(sRemote, "\n", "");
+		if (!sRemoteTemp.empty())
 		{
-			sRemote = Replace(sRemote, m_sType + "\t" + m_sWorkspace + "\n", "");
-			writeTextFile(m_sDataRemoteFilePath, sRemote);
+			return true;
 		}
-	}
-	if (!bAllComplete)
-	{
-		return false;
-	}
-	string sRemoteTemp = Replace(sRemote, "\n", "");
-	if (!sRemoteTemp.empty())
-	{
-		return true;
 	}
 	for (n32 nRepoIndex = 0; nRepoIndex < nRepoCount; nRepoIndex++)
 	{
@@ -2169,6 +2185,10 @@ bool CRepo::Remove()
 		{
 			return false;
 		}
+	}
+	if (m_bRemoveLocalRepo)
+	{
+		return true;
 	}
 	if (!removeDir(m_sDataDirPath))
 	{
@@ -2869,6 +2889,10 @@ bool CRepo::removeDir(const UString& a_sDirPath) const
 	{
 		UPrintf(USTR("ERROR: remove dir %") PRIUS USTR(" failed\n\n"), a_sDirPath.c_str());
 		return false;
+	}
+	if (m_bVerbose)
+	{
+		UPrintf(USTR("remove dir %") PRIUS USTR("\n"), a_sDirPath.c_str());
 	}
 	return true;
 }

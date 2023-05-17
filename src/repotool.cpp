@@ -27,6 +27,8 @@ CRepoTool::SOption CRepoTool::s_Option[] =
 	{ nullptr, 0, USTR("\nimport:") },
 	{ USTR("import-param"), 0, USTR("[0-9A-Fa-f]*\n\t\thex encrypted param for import action") },
 	{ USTR("import-key"), 0, USTR("[\\x21-\\x7E]*\n\t\tkey for decrypt import param") },
+	{ nullptr, 0, USTR("\nremove:") },
+	{ USTR("remove-local-repo"), 0, USTR("remove local repo only") },
 	{ nullptr, 0, nullptr }
 };
 
@@ -34,6 +36,7 @@ CRepoTool::CRepoTool()
 	: m_eAction(kActionNone)
 	, m_bVerbose(false)
 	, m_bUpdateImport(false)
+	, m_bRemoveLocalRepo(false)
 {
 }
 
@@ -427,6 +430,10 @@ CRepoTool::EParseOptionReturn CRepoTool::parseOptions(const UChar* a_pName, int&
 		}
 		m_sImportKey = sImportKey;
 	}
+	else if (UCscmp(a_pName, USTR("remove-local-repo")) == 0)
+	{
+		m_bRemoveLocalRepo = true;
+	}
 	return kParseOptionReturnSuccess;
 }
 
@@ -545,6 +552,7 @@ bool CRepoTool::remove() const
 		repo.SetWorkspace(m_sUser);
 	}
 	repo.SetUser(m_sUser);
+	repo.SetRemoveLocalRepo(m_bRemoveLocalRepo);
 	repo.SetVerbose(m_bVerbose);
 	bool bResult = repo.Remove();
 	CCurlGlobalHolder::Finalize();
@@ -564,6 +572,8 @@ int CRepoTool::sample() const
 	UPrintf(USTR("repotool -v --download -i \"/github/upload\"\n\n"));
 	UPrintf(USTR("# remove file(s)\n"));
 	UPrintf(USTR("repotool -v --remove -i \"/github/upload\"\n\n"));
+	UPrintf(USTR("# remove local repo file(s) only\n"));
+	UPrintf(USTR("repotool -v --remove --remove-local-repo -i \"/github/upload\"\n\n"));
 	return 0;
 }
 

@@ -38,6 +38,7 @@ public:
 	void SetUpdateImport(bool a_bUpdateImport);
 	void SetImportParam(const string& a_sImportParam);
 	void SetImportKey(const string& a_sImportKey);
+	void SetRemoveLocalRepo(bool a_bRemoveLocalRepo);
 	void SetVerbose(bool a_bVerbose);
 	bool Unpack();
 	bool Pack();
@@ -109,6 +110,7 @@ private:
 	bool m_bUpdateImport;
 	string m_sImportParam;
 	string m_sImportKey;
+	bool m_bRemoveLocalRepo;
 	bool m_bVerbose;
 	UString m_sSeperator;
 	string m_sRepoName;
