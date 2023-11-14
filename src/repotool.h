@@ -60,6 +60,7 @@ private:
 	string m_sImportParam;
 	string m_sImportKey;
 	bool m_bRemoveLocalRepo;
+	bool m_bRemoveRemoteUser;
 	UString m_sMessage;
 };
 

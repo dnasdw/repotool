@@ -55,6 +55,7 @@ bool SRepoIndexData::Parse(const string& a_sLine)
 CRepo::CRepo()
 	: m_bUpdateImport(false)
 	, m_bRemoveLocalRepo(false)
+	, m_bRemoveRemoteUser(false)
 	, m_bVerbose(false)
 	, m_sSeperator(USTR("/"))
 	, m_bHasGithubImporter(false)
@@ -112,6 +113,11 @@ void CRepo::SetImportKey(const string& a_sImportKey)
 void CRepo::SetRemoveLocalRepo(bool a_bRemoveLocalRepo)
 {
 	m_bRemoveLocalRepo = a_bRemoveLocalRepo;
+}
+
+void CRepo::SetRemoveRemoteUser(bool a_bRemoveRemoteUser)
+{
+	m_bRemoveRemoteUser = a_bRemoveRemoteUser;
 }
 
 void CRepo::SetVerbose(bool a_bVerbose)
@@ -1980,6 +1986,10 @@ bool CRepo::Remove()
 	{
 		return false;
 	}
+	if (m_bRemoveRemoteUser)
+	{
+		return removeRemoteUser();
+	}
 	if (!StartWith(m_sInputPath, USTR("/")))
 	{
 		m_sInputPath = USTR("/") + m_sInputPath;
@@ -2893,6 +2903,62 @@ bool CRepo::removeDir(const UString& a_sDirPath) const
 	if (m_bVerbose)
 	{
 		UPrintf(USTR("remove dir %") PRIUS USTR("\n"), a_sDirPath.c_str());
+	}
+	return true;
+}
+
+bool CRepo::removeRemoteUser()
+{
+	for (map<string, string>::const_iterator itPathHash = m_mPathHash.begin(); itPathHash != m_mPathHash.end(); ++itPathHash)
+	{
+		m_sHash = itPathHash->second;
+		if (!generateDataDirPath(false))
+		{
+			return false;
+		}
+		string sRemote;
+		if (!readTextFile(m_sDataRemoteFilePath, sRemote))
+		{
+			return false;
+		}
+		bool bNeedRemoveRemoteUser = false;
+		vector<string> vRemote = SplitOf(sRemote, "\r\n");
+		sRemote.clear();
+		for (vector<string>::const_iterator it = vRemote.begin(); it != vRemote.end(); ++it)
+		{
+			const string& sLine = *it;
+			if (sLine.empty())
+			{
+				continue;
+			}
+			vector<string> vLine = Split(sLine, "\t");
+			if (vLine.size() != 2)
+			{
+				UPrintf(USTR("ERROR: parse remote %") PRIUS USTR(" failed\n\n"), U8ToU(sLine).c_str());
+				return false;
+			}
+			const string& sType = vLine[0];
+			const string& sWorkspace = vLine[1];
+			if (sType == m_sType && sWorkspace == m_sWorkspace)
+			{
+				bNeedRemoveRemoteUser = true;
+			}
+			else
+			{
+				sRemote += sType + "\t" + sWorkspace + "\n";
+			}
+		}
+		if (bNeedRemoveRemoteUser)
+		{
+			if (!writeTextFile(m_sDataRemoteFilePath, sRemote))
+			{
+				return false;
+			}
+			if (m_bVerbose)
+			{
+				UPrintf(USTR("%") PRIUS USTR("\n"), U8ToU(itPathHash->first).c_str());
+			}
+		}
 	}
 	return true;
 }

@@ -29,6 +29,7 @@ CRepoTool::SOption CRepoTool::s_Option[] =
 	{ USTR("import-key"), 0, USTR("[\\x21-\\x7E]*\n\t\tkey for decrypt import param") },
 	{ nullptr, 0, USTR("\nremove:") },
 	{ USTR("remove-local-repo"), 0, USTR("remove local repo only") },
+	{ USTR("remove-remote-user"), 0, USTR("remove remote user from data only") },
 	{ nullptr, 0, nullptr }
 };
 
@@ -37,6 +38,7 @@ CRepoTool::CRepoTool()
 	, m_bVerbose(false)
 	, m_bUpdateImport(false)
 	, m_bRemoveLocalRepo(false)
+	, m_bRemoveRemoteUser(false)
 {
 }
 
@@ -118,12 +120,36 @@ int CRepoTool::CheckOptions() const
 		UPrintf(USTR("ERROR: nothing to do\n\n"));
 		return 1;
 	}
-	if (m_eAction == kActionUnpack || m_eAction == kActionPack || m_eAction == kActionUpload || m_eAction == kActionDownload || m_eAction == kActionRemove)
+	if (m_eAction == kActionUnpack || m_eAction == kActionPack || m_eAction == kActionUpload || m_eAction == kActionDownload)
 	{
 		if (m_sInputPath.empty())
 		{
 			UPrintf(USTR("ERROR: no --input option\n\n"));
 			return 1;
+		}
+	}
+	if (m_eAction == kActionRemove)
+	{
+		if (m_bRemoveRemoteUser)
+		{
+			if (m_sType.empty())
+			{
+				UPrintf(USTR("ERROR: no --type option\n\n"));
+				return 1;
+			}
+			if (m_sUser.empty())
+			{
+				UPrintf(USTR("ERROR: no --user option\n\n"));
+				return 1;
+			}
+		}
+		else
+		{
+			if (m_sInputPath.empty())
+			{
+				UPrintf(USTR("ERROR: no --input option\n\n"));
+				return 1;
+			}
 		}
 	}
 	if (m_eAction == kActionUnpack || m_eAction == kActionPack)
@@ -432,7 +458,19 @@ CRepoTool::EParseOptionReturn CRepoTool::parseOptions(const UChar* a_pName, int&
 	}
 	else if (UCscmp(a_pName, USTR("remove-local-repo")) == 0)
 	{
+		if (m_bRemoveRemoteUser)
+		{
+			return kParseOptionReturnOptionConflict;
+		}
 		m_bRemoveLocalRepo = true;
+	}
+	else if (UCscmp(a_pName, USTR("remove-remote-user")) == 0)
+	{
+		if (m_bRemoveLocalRepo)
+		{
+			return kParseOptionReturnOptionConflict;
+		}
+		m_bRemoveRemoteUser = true;
 	}
 	return kParseOptionReturnSuccess;
 }
@@ -553,6 +591,7 @@ bool CRepoTool::remove() const
 	}
 	repo.SetUser(m_sUser);
 	repo.SetRemoveLocalRepo(m_bRemoveLocalRepo);
+	repo.SetRemoveRemoteUser(m_bRemoveRemoteUser);
 	repo.SetVerbose(m_bVerbose);
 	bool bResult = repo.Remove();
 	CCurlGlobalHolder::Finalize();
@@ -574,6 +613,8 @@ int CRepoTool::sample() const
 	UPrintf(USTR("repotool -v --remove -i \"/github/upload\"\n\n"));
 	UPrintf(USTR("# remove local repo file(s) only\n"));
 	UPrintf(USTR("repotool -v --remove --remove-local-repo -i \"/github/upload\"\n\n"));
+	UPrintf(USTR("# remove remote user from remote.txt file(s) only\n"));
+	UPrintf(USTR("repotool -v --remove --remove-remote-user -t github --user someone\n\n"));
 	return 0;
 }
 

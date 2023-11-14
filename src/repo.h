@@ -39,6 +39,7 @@ public:
 	void SetImportParam(const string& a_sImportParam);
 	void SetImportKey(const string& a_sImportKey);
 	void SetRemoveLocalRepo(bool a_bRemoveLocalRepo);
+	void SetRemoveRemoteUser(bool a_bRemoveRemoteUser);
 	void SetVerbose(bool a_bVerbose);
 	bool Unpack();
 	bool Pack();
@@ -102,6 +103,7 @@ private:
 	bool gitPush(bool a_bQuiet) const;
 	bool gitPull(const string& a_sRemoteURL, bool a_bQuiet) const;
 	bool removeDir(const UString& a_sDirPath) const;
+	bool removeRemoteUser();
 	UString m_sInputPath;
 	UString m_sOutputPath;
 	string m_sType;
@@ -111,6 +113,7 @@ private:
 	string m_sImportParam;
 	string m_sImportKey;
 	bool m_bRemoveLocalRepo;
+	bool m_bRemoveRemoteUser;
 	bool m_bVerbose;
 	UString m_sSeperator;
 	string m_sRepoName;
